@@ -39,7 +39,7 @@ def get_prefix_name() -> str:
             return prefix_name
 
 
-def get_time(var_ranges: dict) -> tuple:
+def get_time(var_ranges: dict) -> float:
     '''
     Extracts the time value from the var_ranges_raw dictionary at the key.
     The min and max values should be the same.

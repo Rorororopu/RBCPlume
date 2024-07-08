@@ -7,7 +7,7 @@ import pandas as pd
 
 import mapper
 
-def normalizer(data_object:mapper.Data, data:pd.DataFrame, var:str, range:list=[0, 1]) -> object:
+def normalizer(data_object:mapper.Data, data:pd.DataFrame, var:str, range:list=[0, 1]) -> pd.DataFrame:
     '''
     Normalize indicated variable (except for the x, y, or z coordinates, or temperature) to the range of [min, max]. 
     The default of range is [0, 1]

@@ -12,16 +12,18 @@ import numpy as np
 import pandas as pd
 import matplotlib as plt
 import tensorflow as tf # deep learning library
+import typing # Clearly indicating the type of data in the return tuple of a function
 
 # automatically installed with tensorflow
+# Don't use the 'from *** import ***', it will cause errors!
 import keras.layers
 import keras.models
 import keras.optimizers
 import keras.backend as K
 
-from sklearn.model_selection import train_test_split
+import sklearn.model_selection
 
-def data_arranger_NN(data:pd.DataFrame) -> tuple:
+def data_arranger_NN(data: pd.DataFrame) -> typing.Tuple[np.ndarray, typing.List]:
     '''
     Arg:
         Read in pandas table with header:
@@ -58,7 +60,7 @@ def data_arranger_NN(data:pd.DataFrame) -> tuple:
     return array, header
 
 
-def data_arranger_CNN(data:pd.DataFrame, resolution:list) -> tuple:
+def data_arranger_CNN(data:pd.DataFrame, resolution:list) -> typing.Tuple[np.ndarray, typing.List]:
     '''
     Arg:
         Read in pandas table with header:
@@ -143,15 +145,9 @@ def loss_function_NN(data:tf.Tensor, header:list, classification:tf.Tensor) -> t
         classification: a 1D tensor, storing classification results between 0-1 for each grid points for this batch.
 
     Returns: 
-        loss: a SCALAR(single-value) tensor representing how bad a model predicts in a batch.
-
-    The loss is calculated by 2 parts of formula:
-        1. primary_loss: mean((classification*2-1)*((1-temperature_gradient)+(1-velocity_magnitude_gradient)+(1-z_velocity_gradient)))[over each grid points].
-    When points which are classified to unlikely be a boundry and it has high gradients, or when points 
-    which are classified to likely be a boundary and it has low gradients, the loss will be greater.
-
-        2. regularization_loss: mean(square(classification-0.5))[over each grid points].
-    Without this term, to eliminate the loss, the model will always let te prediction to be 0.5.
+        loss: a SCALAR(single-value) tensor representing how bad a model predicts in a batch. A point with
+        high gradient and low classification value, or low gradient and high classification value will contribute
+        to higher loss. The loss wil also be high if the classificaition is close to 0.5, to encourage certain classification results.
     '''
     # Extract the indices of the gradients from the header
     temp_grad_idx = header.index('temperature_gradient')
@@ -163,11 +159,17 @@ def loss_function_NN(data:tf.Tensor, header:list, classification:tf.Tensor) -> t
     velocity_magnitude_gradient = data[:, vel_mag_grad_idx]
     z_velocity_gradient = data[:, z_vel_grad_idx]
 
-    # Calculate the loss
-    primary_loss = tf.reduce_mean(
-        (classification * 2 - 1) * ((1 - temperature_gradient) + (1 - velocity_magnitude_gradient) + (1 - z_velocity_gradient))
-    )
+    # Calculate the primary gradient loss
+    gradient_sum = temperature_gradient + velocity_magnitude_gradient + z_velocity_gradient
+    loss_high_class_low_grad = classification * (1 - gradient_sum)
+    loss_low_class_high_grad = (1 - classification) * gradient_sum
+
+    primary_loss = tf.reduce_mean(loss_high_class_low_grad + loss_low_class_high_grad)
+    
+    # Add regularization loss to encourage certain properties in classification
     regularization_loss = tf.reduce_mean(tf.square(classification - 0.5))
+    
+    # Total loss
     loss = primary_loss + regularization_loss
 
     return loss
@@ -188,25 +190,37 @@ def loss_function_CNN(data: tf.Tensor, header: list, classification: tf.Tensor) 
         classification: a 2D/3D tensor, storing classification results between 0-1 for each grid points for this batch.
 
     Returns: 
-        loss: a SCALAR (single-value) tensor representing how bad a model predicts in a batch.
-
-    The loss is calculated by 2 parts of formula:
-        1. primary_loss: mean((classification*2-1)*((1-temperature_gradient)+(1-velocity_magnitude_gradient)+(1-z_velocity_gradient)))[over each grid points].
-        When points which are classified to unlikely be a boundary and it has high gradients, or when points 
-        which are classified to likely be a boundary and it has low gradients, the loss will be greater.
-
-        2. regularization_loss: mean(square(classification-0.5))[over each grid points].
-        Without this term, to eliminate the loss, the model will always let the prediction be 0.5.
+        loss: a SCALAR(single-value) tensor representing how bad a model predicts in a batch. A point with
+        high gradient and low classification value, or low gradient and high classification value will contribute
+        to higher loss. The loss wil also be high if the classificaition is close to 0.5, to encourage certain classification results.
     '''
 
-    # Extract the required gradients from the data using the header information
-    temperature_gradient = data[header.index('temperature_gradient')]
-    velocity_magnitude_gradient = data[header.index('velocity_magnitude_gradient')]
-    z_velocity_gradient = data[header.index('z_velocity_gradient')]
+    # Extract the indices of the gradients from the header
+    temp_grad_idx = header.index('temperature_gradient')
+    vel_mag_grad_idx = header.index('velocity_magnitude_gradient')
+    z_vel_grad_idx = header.index('z_velocity_gradient')
 
-    # Calculate the loss
-    primary_loss = tf.reduce_mean((classification * 2 - 1)*((1 - temperature_gradient) + (1 - velocity_magnitude_gradient) + (1 - z_velocity_gradient)))
+    # Extract the gradient values from the data tensor
+    if len(data.shape) == 3: # 2D
+        temperature_gradient = data[temp_grad_idx, :, :]
+        velocity_magnitude_gradient = data[vel_mag_grad_idx, :, :]
+        z_velocity_gradient = data[z_vel_grad_idx, :, :]
+    else: # 3D
+        temperature_gradient = data[temp_grad_idx, :, :, :]
+        velocity_magnitude_gradient = data[vel_mag_grad_idx, :, :, :]
+        z_velocity_gradient = data[z_vel_grad_idx, :, :, :]
+
+    # Calculate the primary gradient loss
+    gradient_sum = temperature_gradient + velocity_magnitude_gradient + z_velocity_gradient
+    loss_high_class_low_grad = classification * (1 - gradient_sum)
+    loss_low_class_high_grad = (1 - classification) * gradient_sum
+
+    primary_loss = tf.reduce_mean(loss_high_class_low_grad + loss_low_class_high_grad)
+    
+    # Add regularization loss to encourage certain properties in classification
     regularization_loss = tf.reduce_mean(tf.square(classification - 0.5))
+    
+    # Total loss
     loss = primary_loss + regularization_loss
 
     return loss
@@ -243,17 +257,17 @@ def NN_model(header: list) -> keras.models.Model:
         Model: A Keras Model object.
     '''
     
-    input_layer = Input(shape=(len(header),))
+    input_layer = keras.layers.Input(shape=(len(header),))
     masked = CustomMasking(mask_value=np.nan)(input_layer) # Exclude NaN values. They will be kept as NaN.
-    x = Dense(len(header), activation='relu')(masked) # relu is a function: when x<0, y=0; when x>0, y=x.
-    x = BatchNormalization()(x)
-    x = Dense(len(header), activation='relu')(x)
-    x = BatchNormalization()(x)
-    x = Dense(len(header), activation='relu')(x)
-    output = Dense(1, activation='sigmoid')(x) # An s-curve whose output is between 0-1.
+    x = keras.layers.Dense(len(header), activation='relu')(masked) # relu is a function: when x<0, y=0; when x>0, y=x.
+    x = keras.layers.BatchNormalization()(x)
+    x = keras.layers.Dense(len(header), activation='relu')(x)
+    x = keras.layers.BatchNormalization()(x)
+    x = keras.layers.Dense(len(header), activation='relu')(x)
+    output = keras.layers.Dense(1, activation='sigmoid')(x) # An s-curve whose output is between 0-1.
     
-    model = Model(inputs=input_layer, outputs=output)
-    model.compile(optimizer=Adam(), loss=loss_function_NN)
+    model = keras.models.Model(inputs=input_layer, outputs=output)
+    model.compile(optimizer=keras.optimizers.adam_v2, loss=loss_function_NN)
 
     return model
 
@@ -415,7 +429,7 @@ def model_train(model:keras.models.Model, data:np.ndarray, batch_size:int=10000,
         model: The trained model
         loss_history: A History object for visualization
     '''
-    train, val = train_test_split(data, test_size=test_size, random_state=42) # Use a 42(or any other number) as a seed so the result of split is always the same 
+    train, val = sklearn.model_selection.train_test_split(data, test_size=test_size, random_state=42) # Use a 42(or any other number) as a seed so the result of split is always the same 
     loss_hist = LossHistory()
     model.fit(train,None,batch_size=batch_size,epochs=epochs,validation_data = (val,None), callbacks=[loss_hist])
     
