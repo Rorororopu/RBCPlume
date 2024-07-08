@@ -13,8 +13,8 @@ start_time = time.time()
 
 def main2(path:str):
     data=pd.read_csv(path)
-    array=model.data_arranger_NN(data)
-    np.savetxt(array, "delete.txt")
+    array, header = model.data_arranger_CNN(data, [200, 200])
+    print(array)
 
 main2("ORIGINAL_TRAINING_DATA/db1.csv")
 

@@ -67,19 +67,21 @@ Identifying the boundry of heat plumes, using the data from direct numerical sim
 
 - If you want to use `git` to track your version, please add `<name of your virtual environment>/` to a text file titled `.gitignore`, so that `git` won't sync this folder everytime you commit. Otherwise, this big file will make every commit process insanely slow!
 
-- **Everytime** you want to run the program, please input:
+    To know more about using `git` and [`Github`](https://github.com), feel free to ask [ChatGPT](https://chatgpt.com), Claude or other big language model! They are very capable of doing this.
+
+- **Everytime** you want to run the program on the terminal, please input:
 
     `source <name of your virtual environment>/bin/activate`
 
     `python main.py`
 
-    and follow its instruction.
-
-- When you finish running, please input:
+    and follow its instruction. When you finish running, please input:
 
     `deactivate`
 
     to close the virtual environment.
+
+    However, [VSC](https://code.visualstudio.com) will automatically complete this if you use its `Remote - SSH` extension.
 
 ## How it works
 
