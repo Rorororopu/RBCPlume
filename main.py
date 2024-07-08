@@ -11,13 +11,6 @@ import time
 
 start_time = time.time()
 
-def main2(path:str):
-    data=pd.read_csv(path)
-    array, header = model.data_arranger_CNN(data, [200, 200])
-    print(array)
-
-main2("ORIGINAL_TRAINING_DATA/db1.csv")
-
 end_time = time.time()
 elapsed_time = end_time - start_time
 print(f"lapsed time: {elapsed_time} seconds")

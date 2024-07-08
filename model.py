@@ -93,15 +93,16 @@ def data_arranger_CNN(data:pd.DataFrame, resolution:list) -> tuple:
         xstep = (data['x'].max() - data['x'].min())/resolution[0]
         ystep = (data['y'].max() - data['y'].min())/resolution[1]
         zstep = (data['z'].max() - data['z'].min())/resolution[2]
+        headers = [col for col in data.columns if col not in ['x', 'y', 'z', 'temperature']]
+        array = np.full((len(headers), resolution[0], resolution[1], resolution[2]), np.nan) # Generate the numpy array filled with NaN
     else: # sliced, coord_cols == ['x', 'y']
         xstep = (data['x'].max() - data['x'].min())/resolution[0]
         ystep = (data['y'].max() - data['y'].min())/resolution[1]
-    
-    headers = [col for col in data.columns if col not in ['x', 'y', 'z', 'temperature']]
-    array = np.full((*resolution, len(headers)), np.nan) # Generate the numpy array filled with NaN
+        headers = [col for col in data.columns if col not in ['x', 'y', 'z', 'temperature']]
+        array = np.full((len(headers), resolution[0], resolution[1]), np.nan)
     
      # Populate the array with data
-    for index, row in data.dropna(subset=coord_cols + ['temperature']).iterrows():
+    for index, row in data.dropna(subset=['temperature']).iterrows():
         # Calculate grid indices of each row
         indices = []
         if 'x' in coord_cols:

@@ -121,6 +121,8 @@ Below explains what are roles of each `*.py` file and how they interact.To see m
 
     Check [3Blue1Brown's series of videos](https://www.youtube.com/watch?v=aircAruvnKk) if you want to know how NN and CNN works. It's not very hard to understand!
 
+    It is strongly recommended to use [Jupyter Notebook](https://jupyter.org) to test this part of code, so that you can run it part by part, to save a lot of time! On [VSC](https://code.visualstudio.com), you just need to install an extension to use it.
+
 7. `visualizer.py`
 
     Read the result of analyzation and output picture to the directory we indicated.
