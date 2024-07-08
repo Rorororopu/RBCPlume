@@ -1,0 +1,8 @@
+.venv/
+._*
+__*
+.DS_Store
+ORIGINAL_TRAINING_DATA/
+*.png
+*.csv
+*.okc
