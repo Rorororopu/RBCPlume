@@ -225,10 +225,10 @@ def loss_function_CNN(data: tf.Tensor, header: list, classification: tf.Tensor) 
 
     return loss
 
-
+    
 class CustomMasking(keras.layers.Layer):
     '''
-    Output NaN for points with NaN values.
+    Add a mask(Boolean mark) for points with NaN values.
     '''
     def __init__(self, mask_value=np.nan, **kwargs):
         super(CustomMasking, self).__init__(**kwargs)
@@ -238,12 +238,21 @@ class CustomMasking(keras.layers.Layer):
         super(CustomMasking, self).build(input_shape)
 
     def call(self, inputs):
-        # generate a mask for NaN points
-        mask = K.cast(K.not_equal(inputs, self.mask_value), K.floatx())
-        return inputs * mask
+        mask = K.not_equal(inputs, self.mask_value)
+        return K.switch(mask, inputs, K.constant(np.nan, dtype=inputs.dtype))
 
     def compute_output_shape(self, input_shape):
         return input_shape
+    
+
+class NaNHandlingLayer(keras.layers.Layer):
+    '''
+    Let points with NaN values have NaN classification result.
+    '''
+    def call(self, inputs):
+        non_nan_mask = tf.math.logical_not(tf.math.is_nan(inputs))
+        outputs = tf.where(non_nan_mask, inputs, tf.constant(np.nan, dtype=inputs.dtype))
+        return outputs
 
 
 def NN_model(header: list) -> keras.models.Model:
@@ -258,7 +267,8 @@ def NN_model(header: list) -> keras.models.Model:
     '''
     
     input_layer = keras.layers.Input(shape=(len(header),))
-    masked = CustomMasking(mask_value=np.nan)(input_layer) # Exclude NaN values. They will be kept as NaN.
+    masked = CustomMasking(mask_value=np.nan)(input_layer)# Exclude NaN values. They will be kept as NaN.
+    masked = NaNHandlingLayer(masked) 
     x = keras.layers.Dense(len(header), activation='relu')(masked) # relu is a function: when x<0, y=0; when x>0, y=x.
     x = keras.layers.BatchNormalization()(x)
     x = keras.layers.Dense(len(header), activation='relu')(x)
@@ -302,36 +312,37 @@ def CNN_2D_model(resolution: list, header: list) -> keras.models.Model:
         Model: A Keras Model object.
     '''
     
-    inputs = [Input(shape=(resolution[0], resolution[1], len(header))) for _ in range(len(header))]
+    inputs = [keras.layers.Input(shape=(resolution[0], resolution[1], len(header))) for _ in range(len(header))]
     masked = CustomMasking(mask_value=np.nan)(inputs)
+    masked = NaNHandlingLayer(masked)
     
     conv_layers = []
     
     for input_layer in masked:
         padded = CustomPadding2D(padding=(1, 1))(input_layer)
-        conv = Conv2D(3, (3, 3), activation='relu', padding='same')(padded) # 3 filters of size (3,3).
-        conv = BatchNormalization()(conv)
+        conv = keras.layers.Conv2D(3, (3, 3), activation='relu', padding='same')(padded) # 3 filters of size (3,3).
+        conv = keras.layers.BatchNormalization()(conv)
         conv_layers.append(conv)
     
     # Concatenate the conv layers along the channel dimension
-    merged_conv = concatenate(conv_layers, axis=-1)
+    merged_conv = keras.layers.concatenate(conv_layers, axis=-1)
     
     # Flatten each grid point's features separately
-    flattened = Flatten()(merged_conv)
+    flattened = keras.layers.Flatten()(merged_conv)
     
     # Reshape to (grid_points, features)
-    reshaped = Reshape((resolution[0] * resolution[1], len(header) * 3))(flattened)
+    reshaped = keras.layers.Reshape((resolution[0] * resolution[1], len(header) * 3))(flattened)
     
     # Apply dense layers to each grid point's features
-    dense = Dense(3, activation='relu')(reshaped)
-    dense = BatchNormalization()(dense)
-    dense = Dense(1, activation='sigmoid')(dense)
+    dense = keras.layers.Dense(3, activation='relu')(reshaped)
+    dense = keras.layers.BatchNormalization()(dense)
+    dense = keras.layers.Dense(1, activation='sigmoid')(dense)
     
     # Reshape back to original grid shape with single channel
-    outputs = Reshape((resolution[0], resolution[1], 1))(dense)
+    outputs = keras.layers.Reshape((resolution[0], resolution[1], 1))(dense)
     
-    model = Model(inputs=inputs, outputs=outputs)
-    model.compile(optimizer=Adam(), loss=loss_function_CNN)
+    model = keras.layers.Model(inputs=inputs, outputs=outputs)
+    model.compile(optimizer=keras.optimizers.adam_v2, loss=loss_function_CNN)
     
     return model
 

@@ -2,12 +2,9 @@
 The main program running that will interact with you. The other programs will automatically as you run this program.
 '''
 
-import model
 import pandas as pd
 import numpy as np
 import time
-
-
 
 start_time = time.time()
 

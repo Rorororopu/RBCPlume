@@ -1,6 +1,6 @@
 # PlumeCNN
 
-Identifying the boundry of heat plumes, using the data from direct numerical simulation of Rayleigh–Bénard convection(RBC) in cylindrical container.
+Identifying the boundry of heat plumes, using the data from direct numerical simulation of Rayleigh–Bénard convection(RBC) in CYLINDRICAL container.
 
 ## Required Softwares to Install
 
@@ -45,7 +45,7 @@ Identifying the boundry of heat plumes, using the data from direct numerical sim
 
 - `cd` to its `PlumeCNN` repository
 
-- Create and activate a vitrual environment on the **TERMINAL** via **SSH**. If Don't input them on your computer using [`sshfs`](https://osxfuse.github.io), because your computer may be confused about your versions of python, your permission of files and some other issues. Please input:
+- Create and activate a vitrual environment via **SSH**. Don't input them on your computer using [`sshfs`](https://osxfuse.github.io), because your computer may be confused about your versions of python, your permission of files and some other issues. Please input:
 
     `python3 -m venv <name of your virtual environment>`
 
@@ -53,11 +53,13 @@ Identifying the boundry of heat plumes, using the data from direct numerical sim
 
     You could use the TAB key to let the terminal automatically complete your command.
 
-    If you still want to view and edit the code on an IDE/editor on your personal device(which is usually done by installing and using the command [`sshfs`](https://osxfuse.github.io)), make sure it could read the virtual environment you created on the directory at the HPC.
+    If you want to view and edit the code on an IDE/editor on your personal device(which is usually done by installing and using the command [`sshfs`](https://osxfuse.github.io)), make sure it could read the virtual environment you created on the directory at the HPC.
 
     For instance, if you are using [Visual Studio Code(VSC)](https://code.visualstudio.com)(Strongly recommended!), instead of simply using the [`sshfs`](https://osxfuse.github.io), you could install the extension`Remote - SSH`, open the terminal and input the command `Remote-SSH: Connect to Host...`(Not the command running on the terminal, but the `Show and Run Command`, found from the **SEARCH BAR** of VSC!). 
 
     Then, install the `Python` extension. From the search bar, use the command `Python: Create Environment...`, select `venv`. Remember to add `.venv` to `.gitignore` file!
+
+    Besides, don't move/upload/download the virtual environment direacory, because it is very easy to create, but there are countless files in the virtual environment. Moving/uploading/downloading it will be very slow!
 
 - Install required package. Please input:
 
@@ -115,7 +117,7 @@ Below explains what are roles of each `*.py` file and how they interact.To see m
 
     Normalize data, calculate necessary parameters: gradients and vorticity.
 
-6. `model.py`
+6. `deep_learning.py`
 
     Use [NN(Neural Network)](https://en.wikipedia.org/wiki/Neural_network_(machine_learning)) and [CNN(Convolutional Neural Network)](https://en.wikipedia.org/wiki/Convolutional_neural_network) to predict whether a point is the boundry of heat plume. It could also do visualization on how the model improves on itself.
 

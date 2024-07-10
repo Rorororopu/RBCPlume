@@ -3,6 +3,7 @@
 __*
 .DS_Store
 ORIGINAL_TRAINING_DATA/
+MORE_TRAINING_DATA/
 *.png
 *.csv
 *.okc
