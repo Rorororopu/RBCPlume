@@ -117,9 +117,9 @@ Below explains what are roles of each `*.py` file and how they interact.To see m
 
     Normalize data, calculate necessary parameters: gradients and vorticity.
 
-6. `deep_learning.py`
+6. `neural_network.py` and  `convolutional_neural_network.py`
 
-    Use [NN(Neural Network)](https://en.wikipedia.org/wiki/Neural_network_(machine_learning)) and [CNN(Convolutional Neural Network)](https://en.wikipedia.org/wiki/Convolutional_neural_network) to predict whether a point is the boundry of heat plume. It could also do visualization on how the model improves on itself.
+    Use [NN(Neural Network)](https://en.wikipedia.org/wiki/Neural_network_(machine_learning)) or [CNN(Convolutional Neural Network)](https://en.wikipedia.org/wiki/Convolutional_neural_network) to predict whether a point is the boundry of heat plume. It could also do visualization on how the model improves on itself.
 
     Check [3Blue1Brown's series of videos](https://www.youtube.com/watch?v=aircAruvnKk) if you want to know how NN and CNN works. It's not very hard to understand!
 
