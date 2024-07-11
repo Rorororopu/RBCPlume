@@ -67,7 +67,8 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
     header = columns_to_normalize
 
     # Get the indices of non-nan values
-    non_nan_indices = np.argwhere(~np.isnan(original_array))
+    non_nan_indices_raw = np.argwhere(~np.isnan(original_array)) # corrently it is an 2D
+    non_nan_indices = np.unique(non_nan_indices_raw[:, 0])
 
     # Get the non-nan values
     non_nan_values = original_array[~np.isnan(original_array)]
@@ -115,7 +116,7 @@ def loss_function_NN(data:tf.Tensor, header:list, classification:tf.Tensor) -> t
     
     # Calculate the primary gradient loss
     gradient_avg = (temperature_gradient + velocity_magnitude_gradient + z_velocity_gradient)/3
-    loss_high_class_low_grad = classification * (2 - gradient_avg)
+    loss_high_class_low_grad = classification * (1 - gradient_avg)
     loss_low_class_high_grad = (1 - classification) * gradient_avg
     primary_loss = tf.reduce_mean(loss_high_class_low_grad + loss_low_class_high_grad)
     
@@ -154,13 +155,15 @@ class CustomModel(keras.Model):
 
     # It defines the logic for a single training step. Called for each batch of data during model.fit().
     # It's not called during inference (model.predict) or evaluation (model.evaluate).
-    def train_step(self:keras.Model, data:tf.Tensor):
-        classification = self(data, training=True)
-        loss = loss_function_NN(data, self.header, classification)
+    def train_step(self, data):
+        with tf.GradientTape() as tape:
+            classification = self(data, training=True)
+            loss = loss_function_NN(data, self.header, classification)
+        
         trainable_vars = self.trainable_variables
-        gradients = tf.GradientTape().gradient(loss, trainable_vars)
+        gradients = tape.gradient(loss, trainable_vars)
         self.optimizer.apply_gradients(zip(gradients, trainable_vars))
-        return {"loss": loss} # will be seen during training!
+        return {"loss": loss}# will be seen during training!
 
 
 class LossHistory(tf.keras.callbacks.Callback):
@@ -176,7 +179,7 @@ class LossHistory(tf.keras.callbacks.Callback):
         self.losses.append(logs.get('loss'))
 
 
-def model_create_compile_train(data:tf.Tensor, header:list, learning_rate:float, batch_size:int, epochs:int) -> CustomModel:
+def model_create_compile_train(data:tf.Tensor, header:list, learning_rate:float, batch_size:int, epochs:int) -> typing.Tuple[CustomModel, LossHistory]:
     '''
     Args: 
         data: arranged non-NaN datas.
@@ -187,12 +190,12 @@ def model_create_compile_train(data:tf.Tensor, header:list, learning_rate:float,
         epoches: number of passes for the whole data.
 
     Returns:
-        Trained model.
-
+        model: Trained model.
+        history: The history of loss over batches.
     '''
     # Create, compile the model
     model = CustomModel(header)
-    model.compile(optimizer = keras.optimizers.Adam(learning_rate=learning_rate))
+    model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate))
 
     # Train the model, returning the loss over batches.
     loss_hist = LossHistory()
@@ -219,14 +222,22 @@ def view_loss_history(history:LossHistory, path:str):
     plt.savefig(path)
 
 
-def model_classification(data:tf.Tensor, non_nan_indices:list, num_grid_data:int) -> np.ndarray:
+def model_classification(model:CustomModel, data:tf.Tensor, non_nan_indices:list, num_grid_data:int) -> np.ndarray:
     '''
     Args: 
+        model: trained model.
         data: arranged data.
-        non_nan_indices:
-        num_grid_data:
+        non_nan_indices: List of indices of points with non_nan_value.
+        num_grid_data: Number of grid points for the whole data, to plug in nan to grid points with nan value.
 
     Returns:
         A 1D numpy array of classification result. NaN value is included.
     '''
+    classification = model.predict(data)
+
+    result = np.full(num_grid_data, np.nan) # create a full list with nan values.
+    result[non_nan_indices] = classification
+    
+    return result
+
 

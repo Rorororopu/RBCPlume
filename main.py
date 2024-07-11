@@ -7,37 +7,24 @@ import numpy as np
 import time
 
 start_time = time.time()
+import neural_network as nn
+import visualizer as vs
 
+data = pd.read_csv("ORIGINAL_TRAINING_DATA/db1.csv")
+input_tensor, header, non_nan_indices, num_grid_points = nn.data_arranger(data)
+print(non_nan_indices)
+'''
+model, history = nn.model_create_compile_train(input_tensor,header,0.001,1000,20)
+nn.view_loss_history(history,"hist.png")
+
+to_be_classified = pd.read_csv("ORIGINAL_TRAINING_DATA/db2.csv")
+input_tensor, header, non_nan_indices, num_grid_points = nn.data_arranger(data)
+result = nn.model_classification(model,input_tensor,non_nan_indices,num_grid_points)
+to_be_classified['is_boundry'] = result
+
+vs.plot_2D_data(to_be_classified,'is_boundry',"result.png")
+
+'''
 end_time = time.time()
 elapsed_time = end_time - start_time
 print(f"lapsed time: {elapsed_time} seconds")
-
-'''
-def main1(path:str, prefix:str):
-
-    data_object = mapper.Data(path, [path], [200,200])
-    data_object.aspect_ratio = 1
-
-    data_object.data = analyzer.normalizer(data_object, data_object.data, "temperature", [-1, 1])
-
-    temp_grad = analyzer.calculate_gradients(data_object, data_object.data, "temperature")
-    vmag_grad = analyzer.calculate_gradients(data_object, data_object.data, "velocity_magnitude")
-    vz_grad = analyzer.calculate_gradients(data_object, data_object.data, "z_velocity")
-
-    final_grid = pd.DataFrame()
-    final_grid['x'] = data_object.data['x']
-    final_grid['y'] = data_object.data['y']
-    final_grid["temperature"] = data_object.data["temperature"]
-    final_grid["temperature_gradient"] = temp_grad["temperature_gradient"]
-    final_grid["velocity_magnitude_gradient"] = vmag_grad["velocity_magnitude_gradient"]
-    final_grid["z_velocity_gradient"] = vz_grad["z_velocity_gradient"]
-    final_grid.to_csv(f"ORIGINAL TRAINING DATA/{prefix}.csv", index=False)
-main1("../highRnum/db1.okc","db1")
-main1("../highRnum/db2.okc","db2")
-main1("../highRnum/db3.okc","db3")
-main1("../highRnum/db4.okc","db4")
-main1("../highRnum/db5.okc","db5")
-main1("../highRnum/db6.okc","db6")
-main1("../highRnum/db7.okc","db7")
-main1("../highRnum/db8.okc","db8")
-'''
