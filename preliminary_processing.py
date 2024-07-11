@@ -127,7 +127,9 @@ def get_grid_num(filepath: str) -> int:
     print(f"Obtained the number of grid points of the file at {filepath}...")
     return grid_num
 
-
+# Seems like this function is actually not needed, because for 2D data, 
+# VisIt will always output the coordinate as x and y, regardless of slicing direction.
+# However, there are many codes related to this atritube, so I'm lazy to modify it.
 def calculate_slicing(var_ranges: dict) -> str:
     '''
     From the range of 'x', 'y' and 'z', calculate if it is a sliced database.

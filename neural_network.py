@@ -99,7 +99,7 @@ def loss_function_NN(data:tf.Tensor, header:list, classification:tf.Tensor) -> t
     z_velocity_gradient = data[:, z_vel_grad_idx]
     
     # Calculate the primary gradient loss
-    gradient_avg = (temperature_gradient * z_velocity_gradient) ** (1/2)
+    gradient_avg = (temperature_gradient * velocity_magnitude_gradient * z_velocity_gradient) ** (1/3)
     loss_high_class_low_grad = classification * (1 - gradient_avg)
     loss_low_class_high_grad = (1 - classification) * gradient_avg
     primary_loss = tf.reduce_mean(loss_high_class_low_grad + loss_low_class_high_grad)
@@ -211,15 +211,16 @@ def view_loss_history(history:LossHistory, path:str):
     plt.savefig(path)
 
 
-def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: list, num_grid_data: int) -> np.ndarray:
+def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: list, num_grid_data: int, table:pd.DataFrame) -> np.ndarray:
     '''
     Args:
         model: trained model.
         data: arranged data.
         non_nan_indices: List of indices of points with non_nan_value.
         num_grid_data: Number of grid points for the whole data, to plug in nan to grid points with nan value.
+        table: The original table with temperature information.
     Returns:
-        A 1D numpy array of classification result. NaN value is included.
+        The original table with a column 'is_boundry' indicating how likely it is to be a boundry, and sign indicating its temperature.
     '''
     classification = np.array(model.predict(data)).flatten()
     
@@ -229,6 +230,12 @@ def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: l
     for i, index in enumerate(non_nan_indices):
         result[index] = classification[i]
     
-    return result
+    table['is_boundry'] = result
+    # Regularize to range of 0-1
+    table['is_boundry'] = (table['is_boundry']-table['is_boundry'].min())/(table['is_boundry'].max() - table['is_boundry'].min())
+    if table['temperature'] < 0:
+        table['is_boundry'] = table['is_boundry'] * (-1)
+    
+    return table
 
 

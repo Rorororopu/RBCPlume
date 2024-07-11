@@ -113,7 +113,7 @@ def calculate_gradients(data_object:mapper.Data, data: pd.DataFrame, var:str) ->
         var: The name of columns to calculate the gradient for.
 
     Returns:
-        A DataFrame with the coordinate columns and the gradient values for the specified variable.
+        A NEW DataFrame with the coordinate columns and the gradient values for the specified variable.
         the header for gradient is f'{var}_gradient'.
     '''
     if not data_object.slicing: 
