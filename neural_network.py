@@ -1,7 +1,24 @@
+'''
+Input: 
+Pandas table with coordinates and gradients, and original data.
 
-'''must split the nan and other points before the data goes into model, because I didn't figure out a way to let the model correctly deal with nans.'''
+Output: 
+A column, indicating how likely this grid point is the boundry of heat plume.
+Its range is [-1, 1], or np.nan(for points with np.nan gradient)
+Its magnitude indicates its liklihood of being a heat plume.
+When it is positive, it indicates a hot plume;
+when it is negative, it indicates a cold plume.
+'''
 
-def data_arranger(data: pd.DataFrame) -> typing.Tuple[np.ndarray, typing.List, typing.List]:
+import pandas as pd
+import typing
+import numpy as np
+import tensorflow as tf
+import matplotlib.pyplot as plt
+import keras # Installed automatically with tensorflow
+
+
+def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, typing.List, int]:
     '''
     Arg:
         Read in pandas table with header:
@@ -19,6 +36,17 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[np.ndarray, typing.List, t
 
         header:
             A list of strings of names of headers for the array above, since numpy array doesn't have a header.
+        
+        non_nan_indices:
+            A list of indices of all non_nan_points, so that when the model finishs predicting non NaN points, 
+            the results can be placed to their original order and fill in the result for NaN points.
+
+        len(data):
+            Number of rows of the original data. With this and non_nan_indices, the program will know where
+            is the points of NaN values.
+
+    The reason why outputing non NaN indices in this function is because currently I con't devise a function
+    to properly deal with NaNs in the model, so I have to remove these points before data are inputed to the model.
     '''
     # List of columns to be retained and normalized
     columns_to_normalize = [col for col in data.columns if col not in ['x', 'y', 'z', 'temperature']]
@@ -38,7 +66,6 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[np.ndarray, typing.List, t
     # Header for the numpy array
     header = columns_to_normalize
 
-
     # Get the indices of non-nan values
     non_nan_indices = np.argwhere(~np.isnan(original_array))
 
@@ -48,12 +75,12 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[np.ndarray, typing.List, t
     # Combine indices and values
     result = np.column_stack((non_nan_indices, non_nan_values))
 
-    print("Result array:")
-    print(result)
+    # Convert result to Tensorflow tensor
+    result = tf.convert_to_tensor(result, dtype='float32')
 
-    return result, header, non_nan_indices
+    return result, header, non_nan_indices, len(data)
 
-# %%
+
 def loss_function_NN(data:tf.Tensor, header:list, classification:tf.Tensor) -> tf.Tensor:
     '''
     The function to calculate and tell the model how bad it performs prediction.
@@ -86,17 +113,6 @@ def loss_function_NN(data:tf.Tensor, header:list, classification:tf.Tensor) -> t
     velocity_magnitude_gradient = data[:, vel_mag_grad_idx]
     z_velocity_gradient = data[:, z_vel_grad_idx]
     
-    # Create a mask for non-NaN values
-    mask = tf.math.logical_not(tf.math.is_nan(temperature_gradient) | 
-                               tf.math.is_nan(velocity_magnitude_gradient) | 
-                               tf.math.is_nan(z_velocity_gradient))
-    
-    # Apply the mask to gradients and classification
-    temperature_gradient = tf.boolean_mask(temperature_gradient, mask)
-    velocity_magnitude_gradient = tf.boolean_mask(velocity_magnitude_gradient, mask)
-    z_velocity_gradient = tf.boolean_mask(z_velocity_gradient, mask)
-    classification = tf.boolean_mask(classification, mask)
-    
     # Calculate the primary gradient loss
     gradient_avg = (temperature_gradient + velocity_magnitude_gradient + z_velocity_gradient)/3
     loss_high_class_low_grad = classification * (2 - gradient_avg)
@@ -106,16 +122,18 @@ def loss_function_NN(data:tf.Tensor, header:list, classification:tf.Tensor) -> t
     # Add regularization loss to encourage certain properties in classification
     regularization_loss = tf.reduce_mean(tf.square(classification - 0.5))
     
-    # Total loss
+    # Total loss. 0.1 is added to avoid the loss approach to 0.693(ln2), which doesn't sounds good.
     loss = primary_loss + 0.1 * regularization_loss
     return loss
 
 
-header = ['temperature_gradient','velocity_magnitude_gradient','z_velocity_gradient']
+class CustomModel(keras.Model):
+    '''
+    The model of neural network. Highly customed.
+    '''
 
-
-class CustomModel(tf.keras.Model):
-    def __init__(self, header):
+    # Called everytime a new instance is created.
+    def __init__(self:keras.Model, header:list):
         super(CustomModel, self).__init__()
         self.header = header
         self.dense1 = keras.layers.Dense(len(header), activation='relu')
@@ -125,7 +143,8 @@ class CustomModel(tf.keras.Model):
         self.dense3 = keras.layers.Dense(len(header), activation='relu')
         self.output_layer = keras.layers.Dense(1, activation='sigmoid')
 
-    def call(self, inputs):
+    # Called during the forward pass of the model, e.g. fitting, predicting, evaluating.
+    def call(self:keras.Model, inputs:np.ndarray):
         x = self.dense1(inputs)
         x = self.bn1(x)
         x = self.dense2(x)
@@ -133,33 +152,81 @@ class CustomModel(tf.keras.Model):
         x = self.dense3(x)
         return self.output_layer(x)
 
-    def train_step(self, data):
-        if isinstance(data, tuple):
-            x = data[0]
-        else:
-            x = data
-        
-        with tf.GradientTape() as tape:
-            y_pred = self(x, training=True)
-            loss = loss_function_NN(x, self.header, y_pred)
-        
+    # It defines the logic for a single training step. Called for each batch of data during model.fit().
+    # It's not called during inference (model.predict) or evaluation (model.evaluate).
+    def train_step(self:keras.Model, data:tf.Tensor):
+        classification = self(data, training=True)
+        loss = loss_function_NN(data, self.header, classification)
         trainable_vars = self.trainable_variables
-        gradients = tape.gradient(loss, trainable_vars)
+        gradients = tf.GradientTape().gradient(loss, trainable_vars)
         self.optimizer.apply_gradients(zip(gradients, trainable_vars))
-        return {"loss": loss}
+        return {"loss": loss} # will be seen during training!
 
-# Create and compile the model
-model = CustomModel(header)
-model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.05))
 
 class LossHistory(tf.keras.callbacks.Callback):
+    '''
+    Recording the loss for tach batches.
+    '''
+    # Called at the beginning of training.
     def on_train_begin(self, logs={}):
         self.losses = []
 
+    # Called at the end of each batch.
     def on_batch_end(self, batch, logs={}):
         self.losses.append(logs.get('loss'))
 
-# Train the model
-loss_hist = LossHistory()
-input_tensor = tf.convert_to_tensor(xxxx, dtype='float32')
-history = model.fit(input_tensor, batch_size=1, epochs=50, callbacks=[loss_hist])
+
+def model_create_compile_train(data:tf.Tensor, header:list, learning_rate:float, batch_size:int, epochs:int) -> CustomModel:
+    '''
+    Args: 
+        data: arranged non-NaN datas.
+        header: list of headers of params. Determines the structure of model.
+        learning_rate: The size of the steps taken during optimization to reach the minimum of the loss function.
+        You need to try to get the optimal one.
+        batch_size: number of lines for one training step.
+        epoches: number of passes for the whole data.
+
+    Returns:
+        Trained model.
+
+    '''
+    # Create, compile the model
+    model = CustomModel(header)
+    model.compile(optimizer = keras.optimizers.Adam(learning_rate=learning_rate))
+
+    # Train the model, returning the loss over batches.
+    loss_hist = LossHistory()
+    history = model.fit(data, batch_size=batch_size, epochs=epochs, callbacks=[loss_hist])
+
+    return model, history
+
+
+def view_loss_history(history:LossHistory, path:str):
+    '''
+    Save the image of loss over batches.
+
+    Args:
+        history: The information to plot.
+        path: The path to save the image.
+    '''
+    # Plot training & validation loss values
+    plt.figure(figsize=(12, 6))
+    plt.plot(history.history['loss'])
+    plt.title('Loss  over each epochs')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend(['Train'], loc='upper right')
+    plt.savefig(path)
+
+
+def model_classification(data:tf.Tensor, non_nan_indices:list, num_grid_data:int) -> np.ndarray:
+    '''
+    Args: 
+        data: arranged data.
+        non_nan_indices:
+        num_grid_data:
+
+    Returns:
+        A 1D numpy array of classification result. NaN value is included.
+    '''
+
