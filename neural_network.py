@@ -17,69 +17,53 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import keras # Installed automatically with tensorflow
 
-
 def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, typing.List, int]:
     '''
     Arg:
         Read in pandas table with header:
         x,y,(maybe z),temperature,temperature_gradient,velocity_magnitude_gradient,z_velocity_gradient
-
     Returns:
         array:
-            Drop the coordinate and "temperature" column of pandas table, 
+            Drop the coordinate and "temperature" column of pandas table,
             normalize the data in range 0-1, and rearrange the data to an 2D numpy array.
-            
-            The first dimension records the index of data points, 
+            The first dimension records the index of data points,
             the second dimension records values of each column at that grid point.
-
             Points with NaN values will also be dropped.
-
         header:
             A list of strings of names of headers for the array above, since numpy array doesn't have a header.
-        
         non_nan_indices:
-            A list of indices of all non_nan_points, so that when the model finishs predicting non NaN points, 
+            A list of indices of all non_nan_points, so that when the model finishs predicting non NaN points,
             the results can be placed to their original order and fill in the result for NaN points.
-
         len(data):
             Number of rows of the original data. With this and non_nan_indices, the program will know where
             is the points of NaN values.
-
-    The reason why outputing non NaN indices in this function is because currently I con't devise a function
-    to properly deal with NaNs in the model, so I have to remove these points before data are inputed to the model.
+            The reason why outputing non NaN indices in this function is because currently I con't devise a function
+            to properly deal with NaNs in the model, so I have to remove these points before data are inputed to the model.
     '''
     # List of columns to be retained and normalized
     columns_to_normalize = [col for col in data.columns if col not in ['x', 'y', 'z', 'temperature']]
     
     # Normalize data
+    normalized_data = data[columns_to_normalize].copy()
     for col in columns_to_normalize:
-        col_min = data[col].min()
-        col_max = data[col].max()
+        col_min = normalized_data[col].min(skipna=True)
+        col_max = normalized_data[col].max(skipna=True)
         if col_max != col_min:  # Check to avoid division by zero
-            data[col] = (data[col] - col_min) / (col_max - col_min)
+            normalized_data[col] = (normalized_data[col] - col_min) / (col_max - col_min)
         else:
-            data[col] = 0.0
+            normalized_data[col] = 0.0
     
-    # Convert the normalized data to a 2D numpy array manually
-    original_array = np.array([list(row) for row in data[columns_to_normalize].itertuples(index=False, name=None)])
+    # Convert the normalized data to a 2D numpy array
+    original_array = normalized_data.to_numpy()
     
-    # Header for the numpy array
-    header = columns_to_normalize
-
     # Get the indices of non-nan values
-    non_nan_indices_raw = np.argwhere(~np.isnan(original_array)) # corrently it is an 2D
-    non_nan_indices = np.unique(non_nan_indices_raw[:, 0])
-
+    non_nan_mask = ~np.isnan(original_array).any(axis=1)
+    non_nan_indices = np.where(non_nan_mask)[0].tolist()
+    
     # Get the non-nan values
-    non_nan_values = original_array[~np.isnan(original_array)]
-
-    # Combine indices and values
-    result = np.column_stack((non_nan_indices, non_nan_values))
-
-    # Convert result to Tensorflow tensor
-    result = tf.convert_to_tensor(result, dtype='float32')
-
-    return result, header, non_nan_indices, len(data)
+    non_nan_values = original_array[non_nan_mask]
+    
+    return non_nan_values, columns_to_normalize, non_nan_indices, len(data)
 
 
 def loss_function_NN(data:tf.Tensor, header:list, classification:tf.Tensor) -> tf.Tensor:
@@ -115,7 +99,7 @@ def loss_function_NN(data:tf.Tensor, header:list, classification:tf.Tensor) -> t
     z_velocity_gradient = data[:, z_vel_grad_idx]
     
     # Calculate the primary gradient loss
-    gradient_avg = (temperature_gradient + velocity_magnitude_gradient + z_velocity_gradient)/3
+    gradient_avg = (temperature_gradient * z_velocity_gradient) ** (1/2)
     loss_high_class_low_grad = classification * (1 - gradient_avg)
     loss_low_class_high_grad = (1 - classification) * gradient_avg
     primary_loss = tf.reduce_mean(loss_high_class_low_grad + loss_low_class_high_grad)
@@ -138,18 +122,14 @@ class CustomModel(keras.Model):
         super(CustomModel, self).__init__()
         self.header = header
         self.dense1 = keras.layers.Dense(len(header), activation='relu')
-        self.bn1 = keras.layers.BatchNormalization()
         self.dense2 = keras.layers.Dense(len(header), activation='relu')
-        self.bn2 = keras.layers.BatchNormalization()
         self.dense3 = keras.layers.Dense(len(header), activation='relu')
         self.output_layer = keras.layers.Dense(1, activation='sigmoid')
 
     # Called during the forward pass of the model, e.g. fitting, predicting, evaluating.
     def call(self:keras.Model, inputs:np.ndarray):
         x = self.dense1(inputs)
-        x = self.bn1(x)
         x = self.dense2(x)
-        x = self.bn2(x)
         x = self.dense3(x)
         return self.output_layer(x)
 
@@ -179,12 +159,25 @@ class LossHistory(tf.keras.callbacks.Callback):
         self.losses.append(logs.get('loss'))
 
 
-def model_create_compile_train(data:tf.Tensor, header:list, learning_rate:float, batch_size:int, epochs:int) -> typing.Tuple[CustomModel, LossHistory]:
+def model_create_compile(header:list, learning_rate:float) -> CustomModel:
     '''
     Args: 
-        data: arranged non-NaN datas.
         header: list of headers of params. Determines the structure of model.
         learning_rate: The size of the steps taken during optimization to reach the minimum of the loss function.
+    Returns:
+        model
+    '''
+    # Create, compile the model
+    model = CustomModel(header)
+    model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate))
+    return model
+
+
+def model_train(model:CustomModel,data:tf.Tensor, batch_size:int, epochs:int) -> typing.Tuple[CustomModel, LossHistory]:
+    '''
+    Args: 
+        model: model to be trained
+        data: arranged non-NaN datas.
         You need to try to get the optimal one.
         batch_size: number of lines for one training step.
         epoches: number of passes for the whole data.
@@ -193,10 +186,6 @@ def model_create_compile_train(data:tf.Tensor, header:list, learning_rate:float,
         model: Trained model.
         history: The history of loss over batches.
     '''
-    # Create, compile the model
-    model = CustomModel(header)
-    model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate))
-
     # Train the model, returning the loss over batches.
     loss_hist = LossHistory()
     history = model.fit(data, batch_size=batch_size, epochs=epochs, callbacks=[loss_hist])
@@ -222,21 +211,23 @@ def view_loss_history(history:LossHistory, path:str):
     plt.savefig(path)
 
 
-def model_classification(model:CustomModel, data:tf.Tensor, non_nan_indices:list, num_grid_data:int) -> np.ndarray:
+def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: list, num_grid_data: int) -> np.ndarray:
     '''
-    Args: 
+    Args:
         model: trained model.
         data: arranged data.
         non_nan_indices: List of indices of points with non_nan_value.
         num_grid_data: Number of grid points for the whole data, to plug in nan to grid points with nan value.
-
     Returns:
         A 1D numpy array of classification result. NaN value is included.
     '''
-    classification = model.predict(data)
-
-    result = np.full(num_grid_data, np.nan) # create a full list with nan values.
-    result[non_nan_indices] = classification
+    classification = np.array(model.predict(data)).flatten()
+    
+    result = np.full(num_grid_data, np.nan)  # create a full array with nan values.
+    
+    # Assign the classification results to the correct indices in the result array
+    for i, index in enumerate(non_nan_indices):
+        result[index] = classification[i]
     
     return result
 
