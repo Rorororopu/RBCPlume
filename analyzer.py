@@ -37,65 +37,69 @@ def normalizer(data_object:mapper.Data, data:pd.DataFrame, var:str, range:list=[
     return data
 
 # The available funciton in numpy to convert from pandas table to numpy array can't work well on the data we're using.
-# So I have to make my own one. However, it is quite slow, so please refine it if you need.
-def pandas_to_numpy(data_object:mapper.Data, data: pd.DataFrame, var:str) -> np.ndarray:
+# So I have to make my own one.
+
+def pandas_to_numpy(data_object: mapper.Data, data: pd.DataFrame, var: str) -> np.ndarray:
     '''
     Convert tables of pandas to numpy array of vars indicated. Points out of the range will be NaN.
-    
-    Args: 
-        data_object: the object containing basic information of data.
-        data: the pandas data to plot
-        var: the variable to convert
-
+    Args:
+    data_object: the object containing basic information of data.
+    data: the pandas data to plot
+    var: the variable to convert
     Returns:
-        An 2D or 3D numpy array.
-    
+    An 2D or 3D numpy array.
     Example:
-        data:
-        x y var
-        0 0 13
-        0 1 14
-        1 0 16
-        NaN NaN NaN
-    
-        output:
-        [[13, 16],
-        [14, NaN]]
+    data:
+    x y var
+    0 0 13
+    0 1 14
+    1 0 16
+    NaN NaN NaN
+    output:
+    [[13, 16],
+    [14, NaN]]
     '''
-
-    array = np.full(data_object.resolution, np.nan) # Generate the numpy array filled with NaN
+    array = np.full(data_object.resolution, np.nan)  # Generate the numpy array filled with NaN
 
     # Calculate increment of coordinates of each grid of numpy arrays
-    if not data_object.slicing: 
+    if not data_object.slicing:
         coord_cols = ['x', 'y', 'z']
-        xstep = (data_object.x_range[1] - data_object.x_range[0])/data_object.resolution[0]
-        ystep = (data_object.y_range[1] - data_object.y_range[0])/data_object.resolution[1]
-        zstep = (data_object.z_range[1] - data_object.z_range[0])/data_object.resolution[2]
-    else: # sliced
+        steps = np.array([
+            (data_object.x_range[1] - data_object.x_range[0]) / data_object.resolution[0],
+            (data_object.y_range[1] - data_object.y_range[0]) / data_object.resolution[1],
+            (data_object.z_range[1] - data_object.z_range[0]) / data_object.resolution[2]
+        ])
+    else:  # sliced
         coord_cols = ['x', 'y']
-        xstep = (data_object.x_range[1] - data_object.x_range[0])/data_object.resolution[0]
-        ystep = (data_object.y_range[1] - data_object.y_range[0])/data_object.resolution[1]
-    
-    print(f"Converting the {var} data to multi-dimensionl array...")
-    for index, row in data.dropna(subset=coord_cols).iterrows():
-        # Calculate grid indices of each rows
-        indices = []
-        for col in coord_cols:
-            col_range = getattr(data_object, f"{col}_range")
-            col_step = locals()[f"{col[0]}step"]
-            col_index = int((row[col] - col_range[0]) / col_step)
-            indices.append(col_index)
+        steps = np.array([
+            (data_object.x_range[1] - data_object.x_range[0]) / data_object.resolution[0],
+            (data_object.y_range[1] - data_object.y_range[0]) / data_object.resolution[1]
+        ])
 
-        # Assign the value to the array
-        try:
-            if len(indices) == 2:
-                array[indices[0], indices[1]] = row[var]
-            elif len(indices) == 3:
-                array[indices[0], indices[1], indices[2]] = row[var]
-        except IndexError:  
-            pass # Handle cases where the calculated index is out of bounds
+    print(f"Converting the {var} data to multi-dimensional array...")
+
+    # Drop NaN values and extract coordinates and variable data
+    valid_data = data.dropna(subset=coord_cols)
+    coords = valid_data[coord_cols].values
+    var_values = valid_data[var].values
+
+    # Calculate indices for each coordinate
+    ranges = np.array([getattr(data_object, f"{col}_range") for col in coord_cols])
+    indices = np.floor((coords - ranges[:, 0]) / steps).astype(int)
+
+    # Filter out indices that are out of bounds
+    mask = np.all((indices >= 0) & (indices < data_object.resolution[:len(coord_cols)]), axis=1)
+    indices = indices[mask]
+    var_values = var_values[mask]
+
+    # Assign values to the array
+    if len(coord_cols) == 2:
+        array[indices[:, 0], indices[:, 1]] = var_values
+    elif len(coord_cols) == 3:
+        array[indices[:, 0], indices[:, 1], indices[:, 2]] = var_values
+
     print("Finished converting.")
-    return array.T # Attatched from debugging
+    return array.T  # Attached from debugging
 
 
 def calculate_gradients(data_object:mapper.Data, data: pd.DataFrame, var:str) -> pd.DataFrame:

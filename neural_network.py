@@ -24,7 +24,7 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
         x,y,(maybe z),<other parameters>,temperature_gradient,velocity_magnitude_gradient,z_velocity_gradient
     Returns:
         array:
-            Drop the coordinate and columns for pther parameters of pandas table,
+            Drop the coordinate and columns for other parameters of pandas table,
             normalize the data in range 0-1, and rearrange the data to an 2D numpy array.
             The first dimension records the index of data points,
             the second dimension records values of each column at that grid point.

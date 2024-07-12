@@ -3,10 +3,8 @@ The main program running that will interact with you. The other programs will au
 '''
 import time
 
-
+import mapper, analyzer, visualizer
 start_time = time.time()
-
-
 
 
 end_time = time.time()
