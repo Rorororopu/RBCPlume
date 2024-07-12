@@ -21,10 +21,10 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
     '''
     Arg:
         Read in pandas table with header:
-        x,y,(maybe z),temperature,temperature_gradient,velocity_magnitude_gradient,z_velocity_gradient
+        x,y,(maybe z),<other parameters>,temperature_gradient,velocity_magnitude_gradient,z_velocity_gradient
     Returns:
         array:
-            Drop the coordinate and "temperature" column of pandas table,
+            Drop the coordinate and columns for pther parameters of pandas table,
             normalize the data in range 0-1, and rearrange the data to an 2D numpy array.
             The first dimension records the index of data points,
             the second dimension records values of each column at that grid point.
@@ -41,10 +41,11 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
             to properly deal with NaNs in the model, so I have to remove these points before data are inputed to the model.
     '''
     # List of columns to be retained and normalized
-    columns_to_normalize = [col for col in data.columns if col not in ['x', 'y', 'z', 'temperature']]
+    columns_to_normalize = [col for col in data.columns if col in ['temperature_gradient', 'velocity_magnitude_gradient', 'z_velocity_gradient']]
     
     # Normalize data
     normalized_data = data[columns_to_normalize].copy()
+    print("Normalizing gradient datas...")
     for col in columns_to_normalize:
         col_min = normalized_data[col].min(skipna=True)
         col_max = normalized_data[col].max(skipna=True)
@@ -54,6 +55,7 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
             normalized_data[col] = 0.0
     
     # Convert the normalized data to a 2D numpy array
+    print("Rearranging data to tensor for model classification...")
     original_array = normalized_data.to_numpy()
     
     # Get the indices of non-nan values
@@ -62,11 +64,12 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
     
     # Get the non-nan values
     non_nan_values = original_array[non_nan_mask]
+    print("Obtained regularized tensor.")
     
     return non_nan_values, columns_to_normalize, non_nan_indices, len(data)
 
 
-def loss_function_NN(data:tf.Tensor, header:list, classification:tf.Tensor) -> tf.Tensor:
+def loss_function(data:tf.Tensor, header:list, classification:tf.Tensor) -> tf.Tensor:
     '''
     The function to calculate and tell the model how bad it performs prediction.
 
@@ -98,8 +101,11 @@ def loss_function_NN(data:tf.Tensor, header:list, classification:tf.Tensor) -> t
     velocity_magnitude_gradient = data[:, vel_mag_grad_idx]
     z_velocity_gradient = data[:, z_vel_grad_idx]
     
-    # Calculate the primary gradient loss
-    gradient_avg = (temperature_gradient * velocity_magnitude_gradient * z_velocity_gradient) ** (1/3)
+    # Calculate the primary gradient loss. 
+    # If the unit is wrong(like the order of gradient_avg is wrong), 
+    # or "order of magnitude" is wrong(like you let a variable ranging from 0-1 to minus 1),
+    # The model will behave very strangely.
+    gradient_avg = ((temperature_gradient ** 2) * (velocity_magnitude_gradient * z_velocity_gradient) ** (1/2)) ** (1/3)
     loss_high_class_low_grad = classification * (1 - gradient_avg)
     loss_low_class_high_grad = (1 - classification) * gradient_avg
     primary_loss = tf.reduce_mean(loss_high_class_low_grad + loss_low_class_high_grad)
@@ -138,7 +144,7 @@ class CustomModel(keras.Model):
     def train_step(self, data):
         with tf.GradientTape() as tape:
             classification = self(data, training=True)
-            loss = loss_function_NN(data, self.header, classification)
+            loss = loss_function(data, self.header, classification)
         
         trainable_vars = self.trainable_variables
         gradients = tape.gradient(loss, trainable_vars)
@@ -211,7 +217,7 @@ def view_loss_history(history:LossHistory, path:str):
     plt.savefig(path)
 
 
-def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: list, num_grid_data: int, table:pd.DataFrame) -> np.ndarray:
+def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: list, num_grid_data: int, table:pd.DataFrame) -> pd.DataFrame:
     '''
     Args:
         model: trained model.
@@ -223,19 +229,21 @@ def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: l
         The original table with a column 'is_boundry' indicating how likely it is to be a boundry, and sign indicating its temperature.
     '''
     classification = np.array(model.predict(data)).flatten()
-    
-    result = np.full(num_grid_data, np.nan)  # create a full array with nan values.
+    result = np.full(num_grid_data, np.nan)  # create a full array with NaN values.
     
     # Assign the classification results to the correct indices in the result array
     for i, index in enumerate(non_nan_indices):
         result[index] = classification[i]
     
-    table['is_boundry'] = result
-    # Regularize to range of 0-1
-    table['is_boundry'] = (table['is_boundry']-table['is_boundry'].min())/(table['is_boundry'].max() - table['is_boundry'].min())
-    if table['temperature'] < 0:
-        table['is_boundry'] = table['is_boundry'] * (-1)
+    table['is_boundary'] = result
     
+    # Normalize to range of 0-1
+    table['is_boundary'] = (table['is_boundary'] - table['is_boundary'].min()) / (table['is_boundary'].max() - table['is_boundary'].min())
+    
+    # Adjust sign based on temperature
+    table.loc[table['temperature'] < 0, 'is_boundary'] *= -1
+    
+    print('Finished classifying data.')
     return table
 
 

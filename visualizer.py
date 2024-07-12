@@ -27,7 +27,7 @@ def get_directory_path(param_name:str) -> str:
             print("\033[91mInvalid directory path. No such directory exists. Please try again.\033[0m") #In red
 
 
-def plot_2D_data(data:pd.DataFrame, param_name:str, path:str):
+def plot_2D_data(data:pd.DataFrame, param_name:str, path:str, cmap:str='viridis'):
     '''
     Generate a 2D scatter plot from a specified parameter in a pandas table. The function dynamically 
     determines the plotting axes based on a slicing direction indicated by 'data_object.slicing'. The plot 
@@ -39,11 +39,14 @@ def plot_2D_data(data:pd.DataFrame, param_name:str, path:str):
         data: The table containing coordinates and data.
         param_name: name of the param to plot.
         path: The path to store the image.
+        cmap: The colormap of the image. There are many choices available. Below are choices I use:
+            'viridis': Ranges from dark blue to bright yellow
+            'coolwarm': Diverging colormap, blue to red
     '''
     
     # Plotting
     plt.figure(figsize=(10, 8))
-    sc = plt.scatter(data['x'], data['y'], c=data[param_name], cmap='viridis')
+    sc = plt.scatter(data['x'], data['y'], c=data[param_name], cmap=cmap)
     plt.colorbar(sc, label=param_name)
     plt.title(f'Plot of {param_name}')
     plt.xlabel('x')

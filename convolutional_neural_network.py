@@ -6,17 +6,17 @@ import tensorflow as tf
 import keras.layers
 
 
-def data_arranger_CNN(data:pd.DataFrame, resolution:list) -> typing.Tuple[np.ndarray, typing.List]:
+def data_arranger(data:pd.DataFrame, resolution:list) -> typing.Tuple[np.ndarray, typing.List]:
     '''
     Arg:
         Read in pandas table with header:
-        x,y,(maybe z),temperature,temperature_gradient,velocity_magnitude_gradient,z_velocity_gradient
+        x,y,(maybe z),<other parameters>,temperature_gradient,velocity_magnitude_gradient,z_velocity_gradient
 
         Also a list of resolution, corresponding of its original coordinate.
 
     Returns:
         array:
-            drop the coordinate and "temperature" column of pandas table, 
+            Drop the coordinate and other params except for gradients of pandas table, 
             normalize the data in range 0-1, and rearrange the data to an 3D/4D numpy array:
             For each columns, there will be a 2D/3D array recording the position of each grid points and their value of each columns,
             ans these arrays are stored in a big array.
@@ -26,8 +26,10 @@ def data_arranger_CNN(data:pd.DataFrame, resolution:list) -> typing.Tuple[np.nda
             A list of strings of names of headers for the array above, corresponding headers to arrays,
             since numpy array doesn't have a header.
     '''
+    columns_to_organize = ['temperature_gradient', 'velocity_magnitude_gradient', 'z_velocity_gradient']
+    print("Normalizing gradient datas...")
     for col in data.columns: # Normalize data
-        if col not in ['x', 'y', 'z', 'temperature']:
+        if col in columns_to_organize:
             col_min = data[col].min()
             col_max = data[col].max()
             if col_max != col_min:  # Check to avoid division by zero
@@ -41,15 +43,16 @@ def data_arranger_CNN(data:pd.DataFrame, resolution:list) -> typing.Tuple[np.nda
         xstep = (data['x'].max() - data['x'].min())/resolution[0]
         ystep = (data['y'].max() - data['y'].min())/resolution[1]
         zstep = (data['z'].max() - data['z'].min())/resolution[2]
-        headers = [col for col in data.columns if col not in ['x', 'y', 'z', 'temperature']]
+        headers = [col for col in data.columns if col in columns_to_organize]
         array = np.full((len(headers), resolution[0], resolution[1], resolution[2]), np.nan) # Generate the numpy array filled with NaN
     else: # sliced, coord_cols == ['x', 'y']
         xstep = (data['x'].max() - data['x'].min())/resolution[0]
         ystep = (data['y'].max() - data['y'].min())/resolution[1]
-        headers = [col for col in data.columns if col not in ['x', 'y', 'z', 'temperature']]
+        headers = [col for col in data.columns if col in columns_to_organize]
         array = np.full((len(headers), resolution[0], resolution[1]), np.nan)
     
      # Populate the array with data
+    print("Rearranging data to tensor for model classification...")
     for index, row in data.dropna(subset=['temperature']).iterrows():
         # Calculate grid indices of each row
         indices = []
@@ -72,11 +75,12 @@ def data_arranger_CNN(data:pd.DataFrame, resolution:list) -> typing.Tuple[np.nda
                     array[i, indices[0], indices[1], indices[2]] = row[var]
             except IndexError:  
                 pass  # Handle cases where the calculated index is out of bounds
+    print("Obtained regularized tensor.")
 
     return array, headers
 
 
-def loss_function_CNN(data: tf.Tensor, header: list, classification: tf.Tensor) -> tf.Tensor:
+def loss_function(data: tf.Tensor, header: list, classification: tf.Tensor) -> tf.Tensor:
     '''
     The function to calculate and tell the model how bad it performs prediction.
 
@@ -144,7 +148,7 @@ class CustomPadding2D(keras.layers.Layer):
         return padded_input
 
 
-def CNN_2D_model(resolution: list, header: list) -> keras.models.Model:
+def model_2D(resolution: list, header: list) -> keras.models.Model:
     '''
     The function to store the Convolutional Neural Network 2D model.
     
@@ -157,12 +161,10 @@ def CNN_2D_model(resolution: list, header: list) -> keras.models.Model:
     '''
     
     inputs = [keras.layers.Input(shape=(resolution[0], resolution[1], len(header))) for _ in range(len(header))]
-    masked = CustomMasking(mask_value=np.nan)(inputs)
-    masked = NaNHandlingLayer(masked)
     
     conv_layers = []
     
-    for input_layer in masked:
+    for input_layer in inputs:
         padded = CustomPadding2D(padding=(1, 1))(input_layer)
         conv = keras.layers.Conv2D(3, (3, 3), activation='relu', padding='same')(padded) # 3 filters of size (3,3).
         conv = keras.layers.BatchNormalization()(conv)

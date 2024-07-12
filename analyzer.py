@@ -33,11 +33,11 @@ def normalizer(data_object:mapper.Data, data:pd.DataFrame, var:str, range:list=[
     ranges[ranges == 0] = 1
 
     data[var] = (data[var] - min_vals[var_names.index(var)]) / ranges[var_names.index(var)] * (range[1] - range[0]) + range[0]
-    print("FInished regularizing this data.")
+    print("Finished regularizing this data.")
     return data
 
 # The available funciton in numpy to convert from pandas table to numpy array can't work well on the data we're using.
-# So I have to make my own one.
+# So I have to make my own one. However, it is quite slow, so please refine it if you need.
 def pandas_to_numpy(data_object:mapper.Data, data: pd.DataFrame, var:str) -> np.ndarray:
     '''
     Convert tables of pandas to numpy array of vars indicated. Points out of the range will be NaN.
@@ -76,7 +76,7 @@ def pandas_to_numpy(data_object:mapper.Data, data: pd.DataFrame, var:str) -> np.
         xstep = (data_object.x_range[1] - data_object.x_range[0])/data_object.resolution[0]
         ystep = (data_object.y_range[1] - data_object.y_range[0])/data_object.resolution[1]
     
-    print(f"Converting the {var} data to multi-dimension array...")
+    print(f"Converting the {var} data to multi-dimensionl array...")
     for index, row in data.dropna(subset=coord_cols).iterrows():
         # Calculate grid indices of each rows
         indices = []
@@ -115,6 +115,8 @@ def calculate_gradients(data_object:mapper.Data, data: pd.DataFrame, var:str) ->
     Returns:
         A NEW DataFrame with the coordinate columns and the gradient values for the specified variable.
         the header for gradient is f'{var}_gradient'.
+
+        The sequence of coordinate of the return is the same as the original table.
     '''
     if not data_object.slicing: 
         coord_cols = ['x', 'y', 'z']
