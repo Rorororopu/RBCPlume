@@ -14,13 +14,13 @@ import convolutional_neural_network as cnn
 df = pd.DataFrame({
     'x': [1, -1, -1, 1],
     'y': [1, 1, -1, -1],
-    'temperature_gradient': [3, 7, 3, 2],
-    'velocity_magnitude_gradient': [2, 1, 1, 6],
-    'z_velocity_gradient': [9, 3, 0, 5]
+    'temperature_gradient': [np.nan, 7, 3, 2],
+    'velocity_magnitude_gradient': [np.nan, 1, 1, 6],
+    'z_velocity_gradient': [np.nan, 3, 0, 5]
 })
 data, headers = cnn.data_arranger(df, [2, 2])
 classification = np.array([
-    [4, 0.3],
+    [np.nan, 0.3],
     [0.5, 0.2]
 ])
 print(cnn.loss_function(data, headers, classification))

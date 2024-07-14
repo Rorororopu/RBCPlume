@@ -133,10 +133,18 @@ def loss_function(data: tf.Tensor, headers: list, classification: tf.Tensor) -> 
     gradient_avg = (temperature_gradient * velocity_magnitude_gradient * z_velocity_gradient) ** (1/3)
     loss_high_class_low_grad = classification * (1 - gradient_avg)
     loss_low_class_high_grad = (1 - classification) * gradient_avg
-    primary_loss = tf.reduce_mean(loss_high_class_low_grad + loss_low_class_high_grad)
+
+    def reduce_mean_ignore_nan(x, axis=None): # ignore nan points for the loss
+        mask = tf.math.is_finite(x)
+        x_masked = tf.where(mask, x, tf.zeros_like(x))
+        sum_masked = tf.reduce_sum(x_masked, axis=axis, keepdims=True)
+        count = tf.reduce_sum(tf.cast(mask, tf.float32), axis=axis, keepdims=True)
+        return tf.math.divide_no_nan(sum_masked, count)
+    
+    primary_loss = reduce_mean_ignore_nan(loss_high_class_low_grad + loss_low_class_high_grad)
 
     # Add regularization loss to encourage certain properties in classification
-    regularization_loss = tf.reduce_mean(tf.square(classification - 0.5))
+    regularization_loss = reduce_mean_ignore_nan(tf.square(classification - 0.5))
     
     # Total loss. 0.1 is added to avoid the loss approach to 0.693(ln2), which doesn't sounds good.
     loss = primary_loss + 0.1 * regularization_loss
