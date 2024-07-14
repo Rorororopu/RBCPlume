@@ -3,12 +3,13 @@ Input:
 Pandas table with coordinates and gradients, and original data.
 
 Output: 
-A column, indicating how likely this grid point is the boundry of heat plume.
-Its range is [-1, 1], or np.nan(for points with np.nan gradient)
+A column attatched to the original table, indicating how likely this grid point is the boundry of heat plume.
+Its range is [-1, 1], or np.nan(for points with np.nan gradient).
 Its magnitude indicates its liklihood of being a heat plume.
 When it is positive, it indicates a hot plume;
 when it is negative, it indicates a cold plume.
 '''
+
 
 import pandas as pd
 import typing
@@ -16,6 +17,7 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import keras # Installed automatically with tensorflow
+
 
 def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, typing.List, int]:
     '''
@@ -29,7 +31,7 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
             The first dimension records the index of data points,
             the second dimension records values of each column at that grid point.
             Points with NaN values will also be dropped.
-        header:
+        headers:
             A list of strings of names of headers for the array above, since numpy array doesn't have a header.
         non_nan_indices:
             A list of indices of all non_nan_points, so that when the model finishs predicting non NaN points,
@@ -41,12 +43,11 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
             to properly deal with NaNs in the model, so I have to remove these points before data are inputed to the model.
     '''
     # List of columns to be retained and normalized
-    columns_to_normalize = [col for col in data.columns if col in ['temperature_gradient', 'velocity_magnitude_gradient', 'z_velocity_gradient']]
-    
+    headers = [col for col in data.columns if col in ['temperature_gradient', 'velocity_magnitude_gradient', 'z_velocity_gradient']]
     # Normalize data
-    normalized_data = data[columns_to_normalize].copy()
+    normalized_data = data[headers].copy()
     print("Normalizing gradient datas...")
-    for col in columns_to_normalize:
+    for col in headers:
         col_min = normalized_data[col].min(skipna=True)
         col_max = normalized_data[col].max(skipna=True)
         if col_max != col_min:  # Check to avoid division by zero
@@ -66,7 +67,7 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
     non_nan_values = original_array[non_nan_mask]
     print("Obtained regularized tensor.")
     
-    return non_nan_values, columns_to_normalize, non_nan_indices, len(data)
+    return non_nan_values, headers, non_nan_indices, len(data)
 
 
 def loss_function(data:tf.Tensor, header:list, classification:tf.Tensor) -> tf.Tensor:
@@ -74,8 +75,7 @@ def loss_function(data:tf.Tensor, header:list, classification:tf.Tensor) -> tf.T
     The function to calculate and tell the model how bad it performs prediction.
 
     Args: 
-        data: a tensor(tensorflow will automatically convert numpy array to tensorflow array),
-        recording the data of a batch. 1st index represents a data point, 2nd index represents
+        data: a tensor recording the data of a batch. 1st index represents a data point, 2nd index represents
         the values of each column at that grid point
 
         header: a list storing the name of variables telling how variable temperature_gradient,
@@ -102,10 +102,10 @@ def loss_function(data:tf.Tensor, header:list, classification:tf.Tensor) -> tf.T
     z_velocity_gradient = data[:, z_vel_grad_idx]
     
     # Calculate the primary gradient loss. 
-    # If the unit is wrong(like the order of gradient_avg is wrong), 
-    # or "order of magnitude" is wrong(like you let a variable ranging from 0-1 to minus 1),
+    # If the dimension of these expressions are wrong(e.g. you miscalculated the geometric average of gradient), 
+    # or didn't write the expression according to the scale of the param(e.g., whether it is ranging form [0,1] or [-1,1]),
     # The model will behave very strangely.
-    gradient_avg = ((temperature_gradient ** 2) * (velocity_magnitude_gradient * z_velocity_gradient) ** (1/2)) ** (1/3)
+    gradient_avg = (temperature_gradient * velocity_magnitude_gradient * z_velocity_gradient) ** (1/3)
     loss_high_class_low_grad = classification * (1 - gradient_avg)
     loss_low_class_high_grad = (1 - classification) * gradient_avg
     primary_loss = tf.reduce_mean(loss_high_class_low_grad + loss_low_class_high_grad)

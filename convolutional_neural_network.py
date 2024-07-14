@@ -1,12 +1,25 @@
+'''
+Input: 
+Pandas table with coordinates and gradients, and original data.
+
+Output: 
+A column attatched to the original table, indicating how likely this grid point is the boundry of heat plume.
+Its range is [-1, 1], or np.nan(for points with np.nan gradient)
+Its magnitude indicates its liklihood of being a heat plume.
+When it is positive, it indicates a hot plume;
+when it is negative, it indicates a cold plume.
+'''
+
+
 import pandas as pd
 import typing
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
+import keras # Installed automatically with tensorflow
 
-import keras.layers
 
-
-def data_arranger(data:pd.DataFrame, resolution:list) -> typing.Tuple[np.ndarray, typing.List]:
+def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarray, typing.List]:
     '''
     Arg:
         Read in pandas table with header:
@@ -22,88 +35,86 @@ def data_arranger(data:pd.DataFrame, resolution:list) -> typing.Tuple[np.ndarray
             ans these arrays are stored in a big array.
             i.e. first index determines which header you are referencing, the 2nd, 3rd, 4th index represents x, y, z coordinates respectively.
 
-        header:
+        headers:
             A list of strings of names of headers for the array above, corresponding headers to arrays,
             since numpy array doesn't have a header.
     '''
-    columns_to_organize = ['temperature_gradient', 'velocity_magnitude_gradient', 'z_velocity_gradient']
+    # List of columns to be retained and normalized
+    headers = [col for col in data.columns if col in ['temperature_gradient', 'velocity_magnitude_gradient', 'z_velocity_gradient']]
+    # Normalize data
+    normalized_data = data[headers].copy()
     print("Normalizing gradient datas...")
-    for col in data.columns: # Normalize data
-        if col in columns_to_organize:
-            col_min = data[col].min()
-            col_max = data[col].max()
-            if col_max != col_min:  # Check to avoid division by zero
-                data[col] = (data[col] - col_min) / (col_max - col_min)
-            else:
-                data[col] = 0.0
+    for col in headers:
+        col_min = normalized_data[col].min(skipna=True)
+        col_max = normalized_data[col].max(skipna=True)
+        if col_max != col_min:  # Check to avoid division by zero
+            normalized_data[col] = (normalized_data[col] - col_min) / (col_max - col_min)
+        else:
+            normalized_data[col] = 0.0
 
-    # Calculate increment of coordinates of each grid of numpy arrays
-    coord_cols = [col for col in ['x', 'y', 'z'] if col in data.columns]
-    if coord_cols == ['x', 'y', 'z']: 
-        xstep = (data['x'].max() - data['x'].min())/resolution[0]
-        ystep = (data['y'].max() - data['y'].min())/resolution[1]
-        zstep = (data['z'].max() - data['z'].min())/resolution[2]
-        headers = [col for col in data.columns if col in columns_to_organize]
-        array = np.full((len(headers), resolution[0], resolution[1], resolution[2]), np.nan) # Generate the numpy array filled with NaN
-    else: # sliced, coord_cols == ['x', 'y']
-        xstep = (data['x'].max() - data['x'].min())/resolution[0]
-        ystep = (data['y'].max() - data['y'].min())/resolution[1]
-        headers = [col for col in data.columns if col in columns_to_organize]
-        array = np.full((len(headers), resolution[0], resolution[1]), np.nan)
+    # Determine coordinate columns
+    coord_cols = [col for col in data.columns if col in ['x', 'y', 'z']]
+    # Create the array
+    array = np.full([len(headers)] + resolution, np.nan)
     
-     # Populate the array with data
-    print("Rearranging data to tensor for model classification...")
-    for index, row in data.dropna(subset=['temperature']).iterrows():
-        # Calculate grid indices of each row
-        indices = []
-        if 'x' in coord_cols:
-            x_index = int((row['x'] - data['x'].min()) / xstep)
-            indices.append(x_index)
-        if 'y' in coord_cols:
-            y_index = int((row['y'] - data['y'].min()) / ystep)
-            indices.append(y_index)
-        if 'z' in coord_cols:
-            z_index = int((row['z'] - data['z'].min()) / zstep)
-            indices.append(z_index)
-        
-        # Assign the values to the array
-        for i, var in enumerate(headers):
-            try:
-                if len(indices) == 2:
-                    array[i, indices[0], indices[1]] = row[var]
-                elif len(indices) == 3:
-                    array[i, indices[0], indices[1], indices[2]] = row[var]
-            except IndexError:  
-                pass  # Handle cases where the calculated index is out of bounds
-    print("Obtained regularized tensor.")
+    # Calculate increment of coordinates of each grid of numpy arrays
+    if coord_cols == ['x', 'y', 'z']:
+        steps = np.array([
+            (data['x'].max() - data['x'].min()) / resolution[0],
+            (data['y'].max() - data['y'].min()) / resolution[1],
+            (data['z'].max() - data['z'].min()) / resolution[2]
+        ])
+    else:  # sliced
+        steps = np.array([
+            (data['x'].max() - data['x'].min()) / resolution[0],
+            (data['y'].max() - data['y'].min()) / resolution[1]
+        ])
 
+    # Calculate indices for each coordinate
+    print('Converting the data to tensor...')
+    ranges = np.array([data[col].agg([min, max]) for col in coord_cols]) # agg could do more calculation ad same time
+    indices = np.floor((data[coord_cols].values - ranges[:, 0]) / steps).astype(int)
+    # Clip indices to ensure they're within bounds
+    indices = np.clip(indices, 0, np.array(resolution[:len(coord_cols)]) - 1)
+
+    # Assign values to grid points of array
+    for i, var in enumerate(headers):
+        if len(coord_cols) == 2:
+            # Use advanced indexing to assign values
+            array[i][tuple(indices.T)] = normalized_data[var].values
+        elif len(coord_cols) == 3:
+            # Use advanced indexing to assign values
+            array[i][tuple(indices.T)] = normalized_data[var].values
+    print("Finished converting.")
     return array, headers
 
 
-def loss_function(data: tf.Tensor, header: list, classification: tf.Tensor) -> tf.Tensor:
+def loss_function(data: tf.Tensor, headers: list, classification: tf.Tensor) -> tf.Tensor:
     '''
     The function to calculate and tell the model how bad it performs prediction.
 
     Args: 
-        data: a tensor (tensorflow will automatically convert numpy array to tensorflow array),
-        recording the data of a batch. 1st index determines which header you are referencing, 
+        data: A tensor recording the data of a table. 1st index determines which header you are referencing, 
         the 2nd, 3rd, 4th index represents x, y, z coordinates respectively.
 
         header: a list storing the name of variables telling how variable temperature_gradient,
         velocity_magnitude_gradient, z_velocity_gradient are correlated the 1st index of the data.
 
-        classification: a 2D/3D tensor, storing classification results between 0-1 for each grid points for this batch.
+        classification: a 2D/3D tensor, storing classification results between 0-1, or NaN, for each grid points for this table.
 
     Returns: 
-        loss: a SCALAR(single-value) tensor representing how bad a model predicts in a batch. A point with
+        loss: a SCALAR(single-value) tensor representing how bad a model predicts in this table. A point with
         high gradient and low classification value, or low gradient and high classification value will contribute
         to higher loss. The loss wil also be high if the classificaition is close to 0.5, to encourage certain classification results.
     '''
+    # Convert data to float32 if it's not already
+    data = tf.cast(data, tf.float32)
+    classification = tf.cast(classification, tf.float32)
 
     # Extract the indices of the gradients from the header
-    temp_grad_idx = header.index('temperature_gradient')
-    vel_mag_grad_idx = header.index('velocity_magnitude_gradient')
-    z_vel_grad_idx = header.index('z_velocity_gradient')
+    temp_grad_idx = headers.index('temperature_gradient')
+    vel_mag_grad_idx = headers.index('velocity_magnitude_gradient')
+    z_vel_grad_idx = headers.index('z_velocity_gradient')
 
     # Extract the gradient values from the data tensor
     if len(data.shape) == 3: # 2D
@@ -115,20 +126,23 @@ def loss_function(data: tf.Tensor, header: list, classification: tf.Tensor) -> t
         velocity_magnitude_gradient = data[vel_mag_grad_idx, :, :, :]
         z_velocity_gradient = data[z_vel_grad_idx, :, :, :]
 
-    # Calculate the primary gradient loss
-    gradient_sum = temperature_gradient + velocity_magnitude_gradient + z_velocity_gradient
-    loss_high_class_low_grad = classification * (1 - gradient_sum)
-    loss_low_class_high_grad = (1 - classification) * gradient_sum
-
+    # Calculate the primary gradient loss. 
+    # If the dimension of these expressions are wrong(e.g. you miscalculated the geometric average of gradient), 
+    # or didn't write the expression according to the scale of the param(e.g., whether it is ranging form [0,1] or [-1,1]),
+    # The model will behave very strangely.
+    gradient_avg = (temperature_gradient * velocity_magnitude_gradient * z_velocity_gradient) ** (1/3)
+    loss_high_class_low_grad = classification * (1 - gradient_avg)
+    loss_low_class_high_grad = (1 - classification) * gradient_avg
     primary_loss = tf.reduce_mean(loss_high_class_low_grad + loss_low_class_high_grad)
-    
+
     # Add regularization loss to encourage certain properties in classification
     regularization_loss = tf.reduce_mean(tf.square(classification - 0.5))
     
-    # Total loss
-    loss = primary_loss + regularization_loss
+    # Total loss. 0.1 is added to avoid the loss approach to 0.693(ln2), which doesn't sounds good.
+    loss = primary_loss + 0.1 * regularization_loss
 
     return loss
+
 
 class CustomPadding2D(keras.layers.Layer):
     '''
@@ -161,10 +175,12 @@ def model_2D(resolution: list, header: list) -> keras.models.Model:
     '''
     
     inputs = [keras.layers.Input(shape=(resolution[0], resolution[1], len(header))) for _ in range(len(header))]
+    masked = CustomMasking(mask_value=np.nan)(inputs)
+    masked = NaNHandlingLayer(masked)
     
     conv_layers = []
     
-    for input_layer in inputs:
+    for input_layer in masked:
         padded = CustomPadding2D(padding=(1, 1))(input_layer)
         conv = keras.layers.Conv2D(3, (3, 3), activation='relu', padding='same')(padded) # 3 filters of size (3,3).
         conv = keras.layers.BatchNormalization()(conv)
@@ -188,7 +204,7 @@ def model_2D(resolution: list, header: list) -> keras.models.Model:
     outputs = keras.layers.Reshape((resolution[0], resolution[1], 1))(dense)
     
     model = keras.layers.Model(inputs=inputs, outputs=outputs)
-    model.compile(optimizer=keras.optimizers.adam_v2, loss=loss_function_CNN)
+    model.compile(optimizer=keras.optimizers.adam_v2, loss=loss_function)
     
     return model
 

@@ -5,7 +5,25 @@ import time
 
 import mapper, analyzer, visualizer
 start_time = time.time()
+import pandas as pd
+import numpy as np
 
+import visualizer as vs
+import convolutional_neural_network as cnn
+
+df = pd.DataFrame({
+    'x': [1, -1, -1, 1],
+    'y': [1, 1, -1, -1],
+    'temperature_gradient': [3, 7, 3, 2],
+    'velocity_magnitude_gradient': [2, 1, 1, 6],
+    'z_velocity_gradient': [9, 3, 0, 5]
+})
+data, headers = cnn.data_arranger(df, [2, 2])
+classification = np.array([
+    [4, 0.3],
+    [0.5, 0.2]
+])
+print(cnn.loss_function(data, headers, classification))
 
 end_time = time.time()
 elapsed_time = end_time - start_time
