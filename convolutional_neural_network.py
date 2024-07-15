@@ -17,7 +17,7 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import keras # Installed automatically with tensorflow
-
+import keras.layers
 
 def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarray, typing.List]:
     '''
@@ -97,7 +97,7 @@ def loss_function(data: tf.Tensor, headers: list, classification: tf.Tensor) -> 
         data: A tensor recording the data of a table. 1st index determines which header you are referencing, 
         the 2nd, 3rd, 4th index represents x, y, z coordinates respectively.
 
-        header: a list storing the name of variables telling how variable temperature_gradient,
+        headers: a list storing the name of variables telling how variable temperature_gradient,
         velocity_magnitude_gradient, z_velocity_gradient are correlated the 1st index of the data.
 
         classification: a 2D/3D tensor, storing classification results between 0-1, or NaN, for each grid points for this table.
@@ -111,7 +111,7 @@ def loss_function(data: tf.Tensor, headers: list, classification: tf.Tensor) -> 
     data = tf.cast(data, tf.float32)
     classification = tf.cast(classification, tf.float32)
 
-    # Extract the indices of the gradients from the header
+    # Extract the indices of the gradients from headers
     temp_grad_idx = headers.index('temperature_gradient')
     vel_mag_grad_idx = headers.index('velocity_magnitude_gradient')
     z_vel_grad_idx = headers.index('z_velocity_gradient')
@@ -152,134 +152,155 @@ def loss_function(data: tf.Tensor, headers: list, classification: tf.Tensor) -> 
     return loss
 
 
-class CustomPadding2D(keras.layers.Layer):
+class CustomModel2D(keras.Model):
     '''
-    Let the boarder grid points have NaN value convolution layer output, because at the boarder 
-    there is not enough points to do convolution, and I want to keep the same shape with the original data and output.
+    The model of convolutional neural network. Highly customized.
+    The input is a tensor, whose 1st index indicates the variable, the rest of indices indicate the x, y coordinates.
+    For each variable, there will be first a convolutional neural network(CNN), then flatten the result.
+    After that, for each grid point, the result of CNN of each of variables will be inputted to dense layers to output the result(2D array).
     '''
-    def __init__(self, padding=(1, 1), **kwargs):
-        self.padding = padding # The size of padding on the boarder
-        super(CustomPadding2D, self).__init__(**kwargs)
+    def __init__(self, headers: list, resolution: list):
+        super(CustomModel2D, self).__init__()
+        self.headers = headers
+        self.resolution = resolution
+
+        # Convolutional layers for each variable. 
+        # The layer have 1 filter(number of kernel), [3,3] size kernel.
+        # For points at the boundry, the 'same' paddling wikk keep the output having the same dimension with the input.
+        self.conv_layers = [
+            keras.layers.Conv2D(1, (3, 3), activation='relu', padding='same')
+            for _ in range(len(headers))
+        ]
+
+        # Dense layers
+        self.dense1 = keras.layers.Dense(len(headers), activation='relu')
+        self.dense2 = keras.layers.Dense(len(headers), activation='relu')
+        self.dense3 = keras.layers.Dense(1, activation='sigmoid')
+
+        # Reshape layer
+        self.output_reshape = keras.layers.Reshape((resolution[0], resolution[1], 1))
 
     def call(self, inputs):
+        # Apply CNN to each variable separately
+        conv_outputs = []
+        for i in range(len(self.headers)):
+            x = inputs[i, :, :]  # Select the i-th variable for all samples
+            x = tf.expand_dims(x, axis=-1) # Insert a new dimension at the end, indicating that for each variable, it is a single channel(grayscale) input
+            x = self.conv_layers[i](x)
+            conv_outputs.append(x)
+        # Concatenate the conv outputs along the channel dimension, along the first axis
+        # (combines the outputs from all the individual convolutional layers into a single tensor)
+        x = tf.concat(conv_outputs, axis=0)
+
+        # Flatten each grid point's features separately, to the shape (resolution[0] * resolution[1], len(headers))
+        x = keras.layers.Reshape((self.resolution[0] * self.resolution[1], -1))(x)
+
+        # Apply dense layers to each grid point's features
+        x = self.dense1(x)
+        x = self.dense2(x)
+        x = self.dense3(x)
+
+        # Reshape back to original grid shape with single channel
+        return self.output_reshape(x)
+    
+    def train_step(self, data):
+        with tf.GradientTape() as tape:
+            classification = self(data, training=True)
+            loss = loss_function(data, self.headers, classification)
         
-        # Create NaN padding
-        padded_input = tf.pad(inputs, 
-                              paddings=[[0, 0], [self.padding[0], self.padding[0]], [self.padding[1], self.padding[1]], [0, 0]],
-                              constant_values=np.nan)
-        return padded_input
+        trainable_vars = self.trainable_variables
+        gradients = tape.gradient(loss, trainable_vars)
+        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+        return {"loss": loss} # will be seen during training!
+    
 
-
-def model_2D(resolution: list, header: list) -> keras.models.Model:
+def model_2D_create_compile(headers:list, learning_rate:float, resolution:list) -> CustomModel2D:
     '''
-    The function to store the Convolutional Neural Network 2D model.
-    
-    Parameters:
-        resolution: The shape of the input data for each parameter [res1, res2].
-        header: A list of headers representing the parameters.
-    
+    Args: 
+        headers: list of headers of params. Determines the structure of model.
+        learning_rate: The size of the steps taken during optimization to reach the minimum of the loss function.
     Returns:
-        Model: A Keras Model object.
+        model
     '''
-    
-    inputs = [keras.layers.Input(shape=(resolution[0], resolution[1], len(header))) for _ in range(len(header))]
-    masked = CustomMasking(mask_value=np.nan)(inputs)
-    masked = NaNHandlingLayer(masked)
-    
-    conv_layers = []
-    
-    for input_layer in masked:
-        padded = CustomPadding2D(padding=(1, 1))(input_layer)
-        conv = keras.layers.Conv2D(3, (3, 3), activation='relu', padding='same')(padded) # 3 filters of size (3,3).
-        conv = keras.layers.BatchNormalization()(conv)
-        conv_layers.append(conv)
-    
-    # Concatenate the conv layers along the channel dimension
-    merged_conv = keras.layers.concatenate(conv_layers, axis=-1)
-    
-    # Flatten each grid point's features separately
-    flattened = keras.layers.Flatten()(merged_conv)
-    
-    # Reshape to (grid_points, features)
-    reshaped = keras.layers.Reshape((resolution[0] * resolution[1], len(header) * 3))(flattened)
-    
-    # Apply dense layers to each grid point's features
-    dense = keras.layers.Dense(3, activation='relu')(reshaped)
-    dense = keras.layers.BatchNormalization()(dense)
-    dense = keras.layers.Dense(1, activation='sigmoid')(dense)
-    
-    # Reshape back to original grid shape with single channel
-    outputs = keras.layers.Reshape((resolution[0], resolution[1], 1))(dense)
-    
-    model = keras.layers.Model(inputs=inputs, outputs=outputs)
-    model.compile(optimizer=keras.optimizers.adam_v2, loss=loss_function)
-    
+    # Create, compile the model
+    model = CustomModel2D(headers, resolution)
+    model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate))
     return model
 
 
-class CustomPadding3D(keras.layers.Layer):
+class LossHistory(tf.keras.callbacks.Callback):
     '''
-    Let the border grid points have NaN value convolution layer output, 
-    because at the border there are not enough points to do convolution, 
-    and I want to keep the same shape with the original data and output.
+    Recording the loss for tach batches.
     '''
-    def __init__(self, padding=(1, 1, 1), **kwargs):
-        self.padding = padding
-        super(CustomPadding3D, self).__init__(**kwargs)
+    # Called at the beginning of training.
+    def on_train_begin(self, logs={}):
+        self.losses = []
 
-    def call(self, inputs):
-        # Create NaN padding
-        padded_input = tf.pad(inputs, 
-                              paddings=[[0, 0], 
-                                        [self.padding[0], self.padding[0]], 
-                                        [self.padding[1], self.padding[1]], 
-                                        [self.padding[2], self.padding[2]], 
-                                        [0, 0]],
-                              constant_values=np.nan)
-        return padded_input
+    # Called at the end of each batch.
+    def on_batch_end(self, batch, logs={}):
+        self.losses.append(logs.get('loss'))
+
+
+def model_2D_train(model:CustomModel2D,data:tf.Tensor, batch_size:int, epochs:int) -> typing.Tuple[CustomModel2D, LossHistory]:
+    '''
+    Args: 
+        model: model to be trained
+        data: arranged non-NaN datas.
+        You need to try to get the optimal one.
+        batch_size: number of lines for one training step.
+        epoches: number of passes for the whole data.
+
+    Returns:
+        model: Trained model.
+        history: The history of loss over batches.
+    '''
+    # Train the model, returning the loss over batches.
+    loss_hist = LossHistory()
+    history = model.fit(data, batch_size=batch_size, epochs=epochs, callbacks=[loss_hist])
+
+    return model, history
+
+
+def view_loss_history(history:LossHistory, path:str):
+    '''
+    Save the image of loss over batches.
+
+    Args:
+        history: The information to plot.
+        path: The path to save the image.
+    '''
+    # Plot training & validation loss values
+    plt.figure(figsize=(12, 6))
+    plt.plot(history.history['loss'])
+    plt.title('Loss  over each epochs')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend(['Train'], loc='upper right')
+    plt.savefig(path)
+
+
+def model_2D_classification(model: CustomModel2D, data: tf.Tensor, non_nan_indices: list, num_grid_data: int, table:pd.DataFrame) -> pd.DataFrame:
+    '''
+    Args:
+        model: trained model.
+        data: arranged data.
+        table: The original table with temperature information.
+    Returns:
+        The original table with a column 'is_boundry' indicating how likely it is to be a boundry, and sign indicating its temperature.
+    '''
+    classification = np.array(model.predict(data)).flatten()
+    
+    table['is_boundary'] = classification
+
+    # Normalize to range of 0-1
+    table['is_boundary'] = (table['is_boundary'] - table['is_boundary'].min()) / (table['is_boundary'].max() - table['is_boundary'].min())
+    
+    # Adjust sign based on temperature
+    table.loc[table['temperature'] < 0, 'is_boundary'] *= -1
+    
+    print('Finished classifying data.')
+    return table
 
 
 def CNN_3D_model(resolution: list, header: list) -> keras.models.Model:
-    '''
-    The function to store the Convolutional Neural Network 3D model.
-    
-    Parameters:
-        resolution: The shape of the input data for each parameter [res1, res2].
-        header: A list of headers representing the parameters.
-    
-    Returns:
-        Model: A Keras Model object.
-    '''
-    
-    inputs = [Input(shape=(resolution[0], resolution[1], resolution[2], len(header))) for _ in range(len(header))]
-    masked = CustomMasking(mask_value=np.nan)(inputs)
-    
-    conv_layers = []
-    
-    for input_layer in masked:
-        padded = CustomPadding2D(padding=(1, 1, 1))(input_layer)
-        conv = Conv3D(3, (3, 3, 3), activation='relu', padding='same')(padded) # 3 filters of size (3,3).
-        conv = BatchNormalization()(conv)
-        conv_layers.append(conv)
-    
-    # Concatenate the conv layers along the channel dimension
-    merged_conv = concatenate(conv_layers, axis=-1)
-    
-    # Flatten each grid point's features separately
-    flattened = Flatten()(merged_conv)
-    
-    # Reshape to (grid_points, features)
-    reshaped = Reshape((resolution[0] * resolution[1] * resolution[2], len(header) * 3))(flattened)
-    
-    # Apply dense layers to each grid point's features
-    dense = Dense(3, activation='relu')(reshaped)
-    dense = BatchNormalization()(dense)
-    dense = Dense(1, activation='sigmoid')(dense)
-    
-    # Reshape back to original grid shape with single channel
-    outputs = Reshape((resolution[0], resolution[1], resolution[2], 1))(dense)
-    
-    model = Model(inputs=inputs, outputs=outputs)
-    model.compile(optimizer=Adam(), loss=loss_function_CNN)
-    
-    return model
+    pass

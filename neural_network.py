@@ -5,9 +5,9 @@ Pandas table with coordinates and gradients, and original data.
 Output: 
 A column attatched to the original table, indicating how likely this grid point is the boundry of heat plume.
 Its range is [-1, 1], or np.nan(for points with np.nan gradient).
-Its magnitude indicates its liklihood of being a heat plume.
-When it is positive, it indicates a hot plume;
-when it is negative, it indicates a cold plume.
+Its magnitude indicates its likelihood of being a heat plume.
+When it is positive, it indicates the boundry of a hot plume;
+when it is negative, it indicates the boundry of a cold plume.
 '''
 
 
@@ -17,7 +17,7 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import keras # Installed automatically with tensorflow
-
+import keras.layers
 
 def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, typing.List, int]:
     '''
@@ -39,8 +39,9 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
         len(data):
             Number of rows of the original data. With this and non_nan_indices, the program will know where
             is the points of NaN values.
-            The reason why outputing non NaN indices in this function is because currently I con't devise a function
-            to properly deal with NaNs in the model, so I have to remove these points before data are inputed to the model.
+
+        The reason why outputing non NaN indices in this function is because currently I con't devise a function
+        to properly deal with NaNs in the model, so I have to remove these points before data are inputed to the model.
     '''
     # List of columns to be retained and normalized
     headers = [col for col in data.columns if col in ['temperature_gradient', 'velocity_magnitude_gradient', 'z_velocity_gradient']]
@@ -70,7 +71,7 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
     return non_nan_values, headers, non_nan_indices, len(data)
 
 
-def loss_function(data:tf.Tensor, header:list, classification:tf.Tensor) -> tf.Tensor:
+def loss_function(data:tf.Tensor, headers:list, classification:tf.Tensor) -> tf.Tensor:
     '''
     The function to calculate and tell the model how bad it performs prediction.
 
@@ -78,7 +79,7 @@ def loss_function(data:tf.Tensor, header:list, classification:tf.Tensor) -> tf.T
         data: a tensor recording the data of a batch. 1st index represents a data point, 2nd index represents
         the values of each column at that grid point
 
-        header: a list storing the name of variables telling how variable temperature_gradient,
+        headers: a list storing the name of variables telling how variable temperature_gradient,
         velocity_magnitude_gradient, z_velocity_gradient are correlated the 2nd index of the data.
 
         classification: a 1D tensor, storing classification results between 0-1 for each grid points for this batch.
@@ -91,10 +92,10 @@ def loss_function(data:tf.Tensor, header:list, classification:tf.Tensor) -> tf.T
     # Convert data to float32 if it's not already
     data = tf.cast(data, tf.float32)
     
-    # Extract the indices of the gradients from the header
-    temp_grad_idx = header.index('temperature_gradient')
-    vel_mag_grad_idx = header.index('velocity_magnitude_gradient')
-    z_vel_grad_idx = header.index('z_velocity_gradient')
+    # Extract the indices of the gradients from headers
+    temp_grad_idx = headers.index('temperature_gradient')
+    vel_mag_grad_idx = headers.index('velocity_magnitude_gradient')
+    z_vel_grad_idx = headers.index('z_velocity_gradient')
     
     # Extract the gradient values from the data tensor
     temperature_gradient = data[:, temp_grad_idx]
@@ -124,12 +125,12 @@ class CustomModel(keras.Model):
     '''
 
     # Called everytime a new instance is created.
-    def __init__(self:keras.Model, header:list):
+    def __init__(self:keras.Model, headers:list):
         super(CustomModel, self).__init__()
-        self.header = header
-        self.dense1 = keras.layers.Dense(len(header), activation='relu')
-        self.dense2 = keras.layers.Dense(len(header), activation='relu')
-        self.dense3 = keras.layers.Dense(len(header), activation='relu')
+        self.headers = headers
+        self.dense1 = keras.layers.Dense(len(headers), activation='relu')
+        self.dense2 = keras.layers.Dense(len(headers), activation='relu')
+        self.dense3 = keras.layers.Dense(len(headers), activation='relu')
         self.output_layer = keras.layers.Dense(1, activation='sigmoid')
 
     # Called during the forward pass of the model, e.g. fitting, predicting, evaluating.
@@ -144,12 +145,12 @@ class CustomModel(keras.Model):
     def train_step(self, data):
         with tf.GradientTape() as tape:
             classification = self(data, training=True)
-            loss = loss_function(data, self.header, classification)
+            loss = loss_function(data, self.headers, classification)
         
         trainable_vars = self.trainable_variables
         gradients = tape.gradient(loss, trainable_vars)
         self.optimizer.apply_gradients(zip(gradients, trainable_vars))
-        return {"loss": loss}# will be seen during training!
+        return {"loss": loss} # will be seen during training!
 
 
 class LossHistory(tf.keras.callbacks.Callback):
@@ -165,16 +166,16 @@ class LossHistory(tf.keras.callbacks.Callback):
         self.losses.append(logs.get('loss'))
 
 
-def model_create_compile(header:list, learning_rate:float) -> CustomModel:
+def model_create_compile(headers:list, learning_rate:float) -> CustomModel:
     '''
     Args: 
-        header: list of headers of params. Determines the structure of model.
+        headers: list of headers of params. Determines the structure of model.
         learning_rate: The size of the steps taken during optimization to reach the minimum of the loss function.
     Returns:
         model
     '''
     # Create, compile the model
-    model = CustomModel(header)
+    model = CustomModel(headers)
     model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate))
     return model
 
@@ -222,8 +223,8 @@ def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: l
     Args:
         model: trained model.
         data: arranged data.
-        non_nan_indices: List of indices of points with non_nan_value.
-        num_grid_data: Number of grid points for the whole data, to plug in nan to grid points with nan value.
+        non_nan_indices: List of indices of points with non_nan_value. To put the classification result to their original position.
+        num_grid_data: Number of grid points for the whole data, to plug in NaN to grid points with NaN value.
         table: The original table with temperature information.
     Returns:
         The original table with a column 'is_boundry' indicating how likely it is to be a boundry, and sign indicating its temperature.
