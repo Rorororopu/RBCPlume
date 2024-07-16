@@ -2,29 +2,32 @@
 The main program running that will interact with you. The other programs will automatically as you run this program.
 '''
 import time
-
-import mapper, analyzer, visualizer
 start_time = time.time()
 import pandas as pd
 import numpy as np
-
 import visualizer as vs
 import convolutional_neural_network as cnn
+import keras.models
+import tensorflow as tf
+import keras
+import keras.optimizers
 
-df = pd.DataFrame({
-    'x': [1, -1, -1, 1],
-    'y': [1, 1, -1, -1],
-    'temperature_gradient': [1, 2, 3, np.nan],
-    'velocity_magnitude_gradient': [1, 2, 3, np.nan],
-    'z_velocity_gradient': [1, 2, 3, np.nan]
-})
-data, headers = cnn.data_arranger(df, [2, 2])
+df = pd.read_csv("ORIGINAL_TRAINING_DATA/CSV/data1.csv")
 
-print(data)
+data, headers, indices = cnn.data_arranger(df, [200, 200])
+
+# Define the model
+model = cnn.model_2D_create_compile(headers, 0.01, [200, 200])
+
+# Compile the model
+model, hist = cnn.model_2D_train(model, data, 3)
+
+
 
 end_time = time.time()
 elapsed_time = end_time - start_time
 print(f"lapsed time: {elapsed_time} seconds")
+
 '''Data1 = mapper.Data("ORIGINAL_TRAINING_DATA/db1.okc", ["ORIGINAL_TRAINING_DATA/db1.okc"], [200,200])
 Data2 = mapper.Data("ORIGINAL_TRAINING_DATA/db2.okc", ["ORIGINAL_TRAINING_DATA/db2.okc"], [200,200])
 Data3 = mapper.Data("ORIGINAL_TRAINING_DATA/db3.okc", ["ORIGINAL_TRAINING_DATA/db3.okc"], [200,200])

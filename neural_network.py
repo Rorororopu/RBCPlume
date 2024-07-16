@@ -18,6 +18,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import keras # Installed automatically with tensorflow
 import keras.layers
+import keras.optimizers
 
 def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, typing.List, int]:
     '''
@@ -176,7 +177,7 @@ def model_create_compile(headers:list, learning_rate:float) -> CustomModel:
     '''
     # Create, compile the model
     model = CustomModel(headers)
-    model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate))
+    model.compile(optimizer = keras.optimizers.adam_v2(learning_rate=learning_rate))
     return model
 
 

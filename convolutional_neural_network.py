@@ -20,7 +20,7 @@ import keras # Installed automatically with tensorflow
 import keras.layers
 
 
-def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarray, typing.List]:
+def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarray, typing.List, np.ndarray]:
     '''
     Arg:
         Read in pandas table with header:
@@ -35,7 +35,7 @@ def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarr
             A list of strings of names of headers for the array above, corresponding headers to arrays,
             since numpy array doesn't have a header.
         indices:
-            A numpy array in shape [*resolution], to store their original index of the table for each grid points, 
+            A numpy array in shape [*resolution], to store their original index of the table for each grid points,
             so that the classification result could be correctly placed into their original position in the pandas table.
     '''
     # List of columns to be retained and normalized
@@ -79,23 +79,28 @@ def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarr
     # Clip indices to ensure they're within bounds
     indices = np.clip(indices, 0, np.array(resolution[:len(coord_cols)]) - 1)
     
-    # Assign values to grid points of array
+    # Create the indices array with default to store original indices
+    indices_array = np.full(resolution, -1)
+    
+    # Assign values to grid points of array and store original indices
     for i, var in enumerate(headers):
         if len(coord_cols) == 2:
             array[0, indices[:, 0], indices[:, 1], i] = normalized_data[var].values
+            indices_array[indices[:, 0], indices[:, 1]] = data.index.values
         elif len(coord_cols) == 3:
             array[0, indices[:, 0], indices[:, 1], indices[:, 2], i] = normalized_data[var].values
+            indices_array[indices[:, 0], indices[:, 1], indices[:, 2]] = data.index.values
     
     print("Finished converting.")
-    return array, headers
+    return array, headers, indices_array
 
 
-def loss_function(data: tf.Tensor, headers: list, classification: tf.Tensor) -> tf.Tensor:
+def loss_function(data: tf.Tensor, headers: list, classification_tensor: tf.Tensor) -> tf.Tensor:
     '''
     The function to calculate and tell the model how bad it performs prediction.
 
     Args: 
-        data: A tensor. in shape [1, *resol, len(headers)]
+        data: A tensor. in shape [1, *resolution, len(headers)]
 
         headers: a list storing the name of variables telling how variable temperature_gradient,
         velocity_magnitude_gradient, z_velocity_gradient are correlated the 1st index of the data.
@@ -110,23 +115,23 @@ def loss_function(data: tf.Tensor, headers: list, classification: tf.Tensor) -> 
     # Convert data to float32 if it's not already
     data = tf.cast(data, tf.float32)
     classification_tensor = tf.cast(classification_tensor, tf.float32)
-
+    
     # Extract the indices of the gradients from headers
     temp_grad_idx = headers.index('temperature_gradient')
     vel_mag_grad_idx = headers.index('velocity_magnitude_gradient')
     z_vel_grad_idx = headers.index('z_velocity_gradient')
-
+    
     # Extract the gradient values from the data tensor
-    if len(data.shape) == 3: # 2D
-        temperature_gradient = data[:, :, :, temp_grad_idx]
-        velocity_magnitude_gradient = data[:, :, :, vel_mag_grad_idx]
-        z_velocity_gradient = data[:, :, :, z_vel_grad_idx]
-        classification = classification_tensor[:, :, :, 0]
-    else: # 3D
-        temperature_gradient = data[:, :, :, :, temp_grad_idx]
-        velocity_magnitude_gradient = data[:, :, :, :, vel_mag_grad_idx]
-        z_velocity_gradient = data[:, :, :, :, z_vel_grad_idx]
-        classification = classification_tensor[:, :, :, 0]
+    if len(data.shape) == 4:  # 2D
+        temperature_gradient = data[0, :, :, temp_grad_idx]
+        velocity_magnitude_gradient = data[0, :, :, vel_mag_grad_idx]
+        z_velocity_gradient = data[0, :, :, z_vel_grad_idx]
+        classification = classification_tensor[0, :, :, 0]
+    elif len(data.shape) == 5:  # 3D
+        temperature_gradient = data[0, :, :, :, temp_grad_idx]
+        velocity_magnitude_gradient = data[0, :, :, :, vel_mag_grad_idx]
+        z_velocity_gradient = data[0, :, :, :, z_vel_grad_idx]
+        classification = classification_tensor[0, :, :, :, 0]
 
     # Calculate the primary gradient loss. 
     # If the dimension of these expressions are wrong(e.g. you miscalculated the geometric average of gradient), 
@@ -158,62 +163,73 @@ class CustomModel2D(keras.Model):
     '''
     The model of convolutional neural network. Highly customized.
     The input is a tensor with shape [1, x, y, len(headers)], the output is a tensor with shape [1, x, y, 1].
-    For each variable, there will be first a convolutional neural network(CNN), 
-    then a dense layer to take the value of concolutional layer of each variable as input.
+    For each variable, there will be first a convolutional neural network(CNN),
+    then a dense layer to take the value of convolutional layer of each variable of each grid point as input.
     '''
     def __init__(self, headers: list, resolution: list):
         super(CustomModel2D, self).__init__()
         self.headers = headers
         self.resolution = resolution
-
-        # Convolutional layers for each variable. 
-        # The layer have 1 filter(number of kernel), [3,3] size kernel.
-        # For points at the boundry, the 'same' paddling wikk keep the output having the same dimension with the input.
-        self.conv_layers = [
-            keras.layers.Conv2D(1, (3, 3), activation='relu', padding='same', input_shape=(resolution[0], resolution[1], len(headers)))
-            for _ in range(len(headers))
-        ]
-
+        
+        # Define the input layer
+        self.inputs = keras.layers.Input(shape=(resolution[0], resolution[1], len(headers)))
+        
+        # Convolutional layers.
+        # The layer have 1 filters(number of kernel) per variable, [3,3] size kernel.
+        # For points at the boundary, the 'same' padding will keep the output having the same dimension with the input.
+        self.conv_layer = self.conv_layers = [keras.layers.Conv2D(filters=1, kernel_size=(3, 3), activation='relu', padding='same') for _ in range(len(headers))]
+        
         # Dense layers
         self.dense1 = keras.layers.Dense(len(headers), activation='relu')
         self.dense2 = keras.layers.Dense(len(headers), activation='relu')
-        self.dense3 = keras.layers.Dense(1, activation='sigmoid')
-
-        # Reshape layer
-        self.output_reshape = keras.layers.Reshape((resolution[0], resolution[1], 1))
+        self.output_layer = keras.layers.Dense(1, activation='sigmoid')
 
     def call(self, inputs):
-        # Apply CNN to each variable separately
+        # Apply separate convolutions for each header
         conv_outputs = []
-        for conv in self.conv_layers:
-        # Each conv layer processes all input channels and outputs a single channel
-            conv_output = conv(inputs)
-            conv_outputs.append(conv_output)
-        # Concatenate the conv outputs along the channel dimension, along the first axis
-        # (combines the outputs from all the individual convolutional layers into a single tensor)
-        x = tf.concat(conv_outputs, axis=0) # Resulting shape:(batch_size, height, width, number_of_conv_layers)
-
-        # Flatten each grid point's features separately, to the shape (resolution[0] * resolution[1], len(headers))
-        x = keras.layers.Reshape((self.resolution[0] * self.resolution[1], -1))(x)
-
-        # Apply dense layers to each grid point's features
-        x = self.dense1(x)
+        for i in range(len(self.headers)):
+            x = inputs[:, :, :, i:i+1]
+            conv_outputs.append(self.conv_layers[i](x))
+        
+        # Concatenate the outputs from all convolutions
+        conv_output = tf.concat(conv_outputs, axis=-1)
+        
+        # Get shape information
+        batch_size = tf.shape(conv_output)[0]
+        height = tf.shape(conv_output)[1]
+        width = tf.shape(conv_output)[2]
+        channels = conv_output.get_shape().as_list()[-1]
+        
+        # Reshape the output to apply dense layers efficiently
+        reshaped = tf.reshape(conv_output, [-1, channels])
+        
+        # Apply dense layers
+        x = self.dense1(reshaped)
         x = self.dense2(x)
-        x = self.dense3(x)
+        x = self.output_layer(x)
+        
+        # Reshape back to original spatial dimensions
+        outputs = tf.reshape(x, [batch_size, height, width, 1])
+        
+        return outputs
 
-        # Reshape back to original grid shape with single channel
-        return self.output_reshape(x)
-    
+
     def train_step(self, data):
         with tf.GradientTape() as tape:
+            # Forward pass
             classification = self(data, training=True)
+            
+            # Compute loss
             loss = loss_function(data, self.headers, classification)
+
+        # Compute gradients
+        gradients = tape.gradient(loss, self.trainable_variables)
         
-        trainable_vars = self.trainable_variables
-        gradients = tape.gradient(loss, trainable_vars)
-        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
-        return {"loss": loss} # will be seen during training!
-    
+        # Update weights
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+
+        return {"loss": loss}
+
 
 def model_2D_create_compile(headers:list, learning_rate:float, resolution:list) -> CustomModel2D:
     '''
@@ -242,13 +258,12 @@ class LossHistory(tf.keras.callbacks.Callback):
         self.losses.append(logs.get('loss'))
 
 
-def model_2D_train(model:CustomModel2D,data:tf.Tensor, batch_size:int, epochs:int) -> typing.Tuple[CustomModel2D, LossHistory]:
+def model_2D_train(model:CustomModel2D,data:tf.Tensor, epochs:int) -> typing.Tuple[CustomModel2D, LossHistory]:
     '''
     Args: 
         model: model to be trained
         data: arranged non-NaN datas.
         You need to try to get the optimal one.
-        batch_size: number of lines for one training step.
         epoches: number of passes for the whole data.
 
     Returns:
@@ -257,7 +272,8 @@ def model_2D_train(model:CustomModel2D,data:tf.Tensor, batch_size:int, epochs:in
     '''
     # Train the model, returning the loss over batches.
     loss_hist = LossHistory()
-    history = model.fit(data, batch_size=batch_size, epochs=epochs, callbacks=[loss_hist])
+    # Because for each data file, there will only be one file, so batch_size will always be 1.
+    history = model.fit(data, batch_size=1, epochs=epochs, callbacks=[loss_hist])
 
     return model, history
 
