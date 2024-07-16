@@ -14,16 +14,13 @@ import convolutional_neural_network as cnn
 df = pd.DataFrame({
     'x': [1, -1, -1, 1],
     'y': [1, 1, -1, -1],
-    'temperature_gradient': [np.nan, 7, 3, 2],
-    'velocity_magnitude_gradient': [np.nan, 1, 1, 6],
-    'z_velocity_gradient': [np.nan, 3, 0, 5]
+    'temperature_gradient': [1, 2, 3, np.nan],
+    'velocity_magnitude_gradient': [1, 2, 3, np.nan],
+    'z_velocity_gradient': [1, 2, 3, np.nan]
 })
 data, headers = cnn.data_arranger(df, [2, 2])
-classification = np.array([
-    [np.nan, 0.3],
-    [0.5, 0.2]
-])
-print(cnn.loss_function(data, headers, classification))
+
+print(data)
 
 end_time = time.time()
 elapsed_time = end_time - start_time
