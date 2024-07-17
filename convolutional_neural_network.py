@@ -235,7 +235,7 @@ def model_2D_create_compile(headers:list, learning_rate:float, resolution:list) 
     '''
     Args: 
         headers: list of headers of params. Determines the structure of model.
-        learning_rate: The size of the steps taken during optimization to reach the minimum of the loss function.
+        learning_rate: The size of the steps taken during optimization to reach the minimum of the loss function. You need to try to get the optimal one.
     Returns:
         model
     '''
@@ -258,13 +258,12 @@ class LossHistory(tf.keras.callbacks.Callback):
         self.losses.append(logs.get('loss'))
 
 
-def model_2D_train(model:CustomModel2D,data:tf.Tensor, epochs:int) -> typing.Tuple[CustomModel2D, LossHistory]:
+def model_2D_train(model:CustomModel2D,data:tf.Tensor, epochs:int=2) -> typing.Tuple[CustomModel2D, LossHistory]:
     '''
     Args: 
         model: model to be trained
         data: arranged non-NaN datas.
-        You need to try to get the optimal one.
-        epoches: number of passes for the whole data.
+        epoches: number of passes for the whole data. Usually 2 epoches is enough.
 
     Returns:
         model: Trained model.

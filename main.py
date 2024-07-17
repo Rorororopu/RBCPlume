@@ -12,17 +12,15 @@ import tensorflow as tf
 import keras
 import keras.optimizers
 
-df = pd.read_csv("ORIGINAL_TRAINING_DATA/CSV/data1.csv")
+df1 = pd.read_csv("ORIGINAL_TRAINING_DATA/CSV/data1.csv")
+data1, headers1, indices1 = cnn.data_arranger(df1, [200, 200])
 
-data, headers, indices = cnn.data_arranger(df, [200, 200])
+model = cnn.model_2D_create_compile(headers1, 0.01, [200, 200])
+model, hist = cnn.model_2D_train(model, data1, 2)
 
-# Define the model
-model = cnn.model_2D_create_compile(headers, 0.01, [200, 200])
-
-# Compile the model
-model, hist = cnn.model_2D_train(model, data, 3)
-
-
+df2 = pd.read_csv("ORIGINAL_TRAINING_DATA/CSV/data2.csv")
+data2, headers2, indices12 = cnn.data_arranger(df2, [200, 200])
+print(model.predict(data2))
 
 end_time = time.time()
 elapsed_time = end_time - start_time
