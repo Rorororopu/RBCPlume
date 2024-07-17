@@ -19,9 +19,10 @@ model = cnn.model_2D_create_compile(headers1, 0.01, [200, 200])
 model, hist = cnn.model_2D_train(model, data1, 2)
 
 df2 = pd.read_csv("ORIGINAL_TRAINING_DATA/CSV/data2.csv")
-data2, headers2, indices12 = cnn.data_arranger(df2, [200, 200])
-print(model.predict(data2))
-
+data2, headers2, indices2 = cnn.data_arranger(df2, [200, 200])
+print(indices2)
+df2 = cnn.model_2D_classification(model, data1, indices2, df2)
+vs.plot_2D_data(df2, 'is_boundary', 'classification.png')
 end_time = time.time()
 elapsed_time = end_time - start_time
 print(f"lapsed time: {elapsed_time} seconds")

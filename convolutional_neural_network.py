@@ -37,6 +37,8 @@ def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarr
         indices:
             A numpy array in shape [*resolution], to store their original index of the table for each grid points,
             so that the classification result could be correctly placed into their original position in the pandas table.
+
+            If there is no such a row corredponding to that grid point, its indice will be -1.
     '''
     # List of columns to be retained and normalized
     headers = [col for col in data.columns if col in ['temperature_gradient', 'velocity_magnitude_gradient', 'z_velocity_gradient']]
@@ -177,7 +179,7 @@ class CustomModel2D(keras.Model):
         # Convolutional layers.
         # The layer have 1 filters(number of kernel) per variable, [3,3] size kernel.
         # For points at the boundary, the 'same' padding will keep the output having the same dimension with the input.
-        self.conv_layer = self.conv_layers = [keras.layers.Conv2D(filters=1, kernel_size=(3, 3), activation='relu', padding='same') for _ in range(len(headers))]
+        self.conv_layers = [keras.layers.Conv2D(filters=1, kernel_size=(3, 3), activation='relu', padding='same') for _ in range(len(headers))]
         
         # Dense layers
         self.dense1 = keras.layers.Dense(len(headers), activation='relu')
@@ -193,7 +195,7 @@ class CustomModel2D(keras.Model):
         
         # Concatenate the outputs from all convolutions
         conv_output = tf.concat(conv_outputs, axis=-1)
-        
+        print(conv_output.numpy())
         # Get shape information
         batch_size = tf.shape(conv_output)[0]
         height = tf.shape(conv_output)[1]
@@ -295,22 +297,27 @@ def view_loss_history(history:LossHistory, path:str):
     plt.savefig(path)
 
 
-def model_2D_classification(model: CustomModel2D, data: tf.Tensor, non_nan_indices: list, num_grid_data: int, table:pd.DataFrame) -> pd.DataFrame:
+def model_2D_classification(model: CustomModel2D, data: tf.Tensor, indices: np.ndarray, table: pd.DataFrame) -> pd.DataFrame:
     '''
     Args:
         model: trained model.
         data: arranged data.
+        indices: tensors storing each grid point should be placed into which row of table.
         table: The original table with temperature information.
     Returns:
         The original table with a column 'is_boundry' indicating how likely it is to be a boundry, and sign indicating its temperature.
     '''
-    classification = model.predict(data)
-    classification = classification.reshape(table.shape[0])  # Reshape to match table size
+    classification = model.predict(data)[0]  # Because there is only 1 batch in a file
     
-    table['is_boundary'] = classification
-
+    # Add the 'is_boundary' column, initialized with NaN
+    table['is_boundary'] = 0
+    
+    # Populate the 'is_boundary' column, skipping -1 indices, which means they don't exist at the original table
+    table.loc[indices.flatten()[indices.flatten() != -1], 'is_boundary'] = classification.flatten()[indices.flatten() != -1]
+    
     # Normalize to range of 0-1
-    table['is_boundary'] = (table['is_boundary'] - table['is_boundary'].min()) / (table['is_boundary'].max() - table['is_boundary'].min())
+    if table['is_boundary'].min() != table['is_boundary'].max():  # Avoid division by zero
+        table['is_boundary'] = (table['is_boundary'] - table['is_boundary'].min()) / (table['is_boundary'].max() - table['is_boundary'].min())
     
     # Adjust sign based on temperature
     table.loc[table['temperature'] < 0, 'is_boundary'] *= -1
