@@ -121,11 +121,11 @@ class CustomModel2D(keras.Model):
         self.inputs = keras.layers.Input(shape=(resolution[0], resolution[1], len(headers)))
         
         # Convolutional layers
-        self.conv_layers = [keras.layers.Conv2D(filters=1, kernel_size=(3, 3), activation='linear', padding='same') for _ in range(len(headers))]
+        self.conv_layers = [keras.layers.Conv2D(filters=3, kernel_size=(3, 3), activation='linear', padding='same') for _ in range(len(headers))]
         
         # Dense layers
-        self.dense1 = keras.layers.Dense(len(headers), activation='relu')
-        self.dense2 = keras.layers.Dense(len(headers), activation='relu')
+        self.dense1 = keras.layers.Dense(3*len(headers), activation='relu')
+        self.dense2 = keras.layers.Dense(3*len(headers), activation='relu')
         self.output_layer = keras.layers.Dense(1, activation='sigmoid')
 
     def call(self, inputs):
@@ -268,7 +268,7 @@ def model_2D_train(model:CustomModel2D,data:tf.Tensor, epochs:int=2) -> typing.T
     Args: 
         model: model to be trained
         data: arranged non-NaN datas.
-        epoches: number of passes for the whole data. Usually 2 epoches is enough.
+        epoches: number of passes for the whole data. Usually about 30 epoches is good. When it is too high, it will behave badly at the edge.
 
     Returns:
         model: Trained model.
@@ -329,5 +329,6 @@ def model_2D_classification(model: CustomModel2D, data: tf.Tensor, indices: np.n
     return table
 
 
-def CNN_3D_model(resolution: list, header: list) -> keras.models.Model:
-    pass
+'''
+code for 3D data are to be finished...
+'''

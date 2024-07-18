@@ -12,21 +12,6 @@ import tensorflow as tf
 import keras
 import keras.optimizers
 
-df1 = pd.read_csv("ORIGINAL_TRAINING_DATA/CSV/data1.csv")
-data1, headers1, indices1 = cnn.data_arranger(df1, [200, 200])
-
-model = cnn.model_2D_create_compile(headers1, 0.005, [200, 200])
-
-model, hist = cnn.model_2D_train(model, data1, 10)
-
-df2 = pd.read_csv("ORIGINAL_TRAINING_DATA/CSV/data2.csv")
-data2, headers2, indices2 = cnn.data_arranger(df2, [200, 200])
-df2 = cnn.model_2D_classification(model, data2, indices2, df2)
-vs.plot_2D_data(df2, 'is_boundary', 'classification.png', 'coolwarm')
-vs.plot_2D_data(df2, 'temperature_gradient', 'temp_grad.png')
-end_time = time.time()
-elapsed_time = end_time - start_time
-print(f"lapsed time: {elapsed_time} seconds")
 
 '''Data1 = mapper.Data("ORIGINAL_TRAINING_DATA/db1.okc", ["ORIGINAL_TRAINING_DATA/db1.okc"], [200,200])
 Data2 = mapper.Data("ORIGINAL_TRAINING_DATA/db2.okc", ["ORIGINAL_TRAINING_DATA/db2.okc"], [200,200])
