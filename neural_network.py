@@ -72,54 +72,6 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
     return non_nan_values, headers, non_nan_indices, len(data)
 
 
-def loss_function(data:tf.Tensor, headers:list, classification:tf.Tensor) -> tf.Tensor:
-    '''
-    The function to calculate and tell the model how bad it performs prediction.
-
-    Args: 
-        data: a tensor recording the data of a batch. 1st index represents a data point, 2nd index represents
-        the values of each column at that grid point
-
-        headers: a list storing the name of variables telling how variable temperature_gradient,
-        velocity_magnitude_gradient, z_velocity_gradient are correlated the 2nd index of the data.
-
-        classification: a 1D tensor, storing classification results between 0-1 for each grid points for this batch.
-
-    Returns: 
-        loss: a SCALAR(single-value) tensor representing how bad a model predicts in a batch. A point with
-        high gradient and low classification value, or low gradient and high classification value will contribute
-        to higher loss. The loss wil also be high if the classificaition is close to 0.5, to encourage certain classification results.
-    '''
-    # Convert data to float32 if it's not already
-    data = tf.cast(data, tf.float32)
-    
-    # Extract the indices of the gradients from headers
-    temp_grad_idx = headers.index('temperature_gradient')
-    vel_mag_grad_idx = headers.index('velocity_magnitude_gradient')
-    z_vel_grad_idx = headers.index('z_velocity_gradient')
-    
-    # Extract the gradient values from the data tensor
-    temperature_gradient = data[:, temp_grad_idx]
-    velocity_magnitude_gradient = data[:, vel_mag_grad_idx]
-    z_velocity_gradient = data[:, z_vel_grad_idx]
-    
-    # Calculate the primary gradient loss. 
-    # If the dimension of these expressions are wrong(e.g. you miscalculated the geometric average of gradient), 
-    # or didn't write the expression according to the scale of the param(e.g., whether it is ranging form [0,1] or [-1,1]),
-    # The model will behave very strangely.
-    gradient_avg = (temperature_gradient * velocity_magnitude_gradient * z_velocity_gradient) ** (1/3)
-    loss_high_class_low_grad = classification * (1 - gradient_avg)
-    loss_low_class_high_grad = (1 - classification) * gradient_avg
-    primary_loss = tf.reduce_mean(loss_high_class_low_grad + loss_low_class_high_grad)
-    
-    # Add regularization loss to encourage certain properties in classification
-    regularization_loss = tf.reduce_mean(tf.square(classification - 0.5))
-    
-    # Total loss. 0.1 is added to avoid the loss approach to 0.693(ln2), which doesn't sounds good.
-    loss = primary_loss + 0.1 * regularization_loss
-    return loss
-
-
 class CustomModel(keras.Model):
     '''
     The model of neural network. Highly customed.
@@ -140,13 +92,60 @@ class CustomModel(keras.Model):
         x = self.dense2(x)
         x = self.dense3(x)
         return self.output_layer(x)
+    
+    def loss_function(data:tf.Tensor, headers:list, classification:tf.Tensor) -> tf.Tensor:
+        '''
+        The function to calculate and tell the model how bad it performs prediction.
+
+        Args: 
+            data: a tensor recording the data of a batch. 1st index represents a data point, 2nd index represents
+            the values of each column at that grid point
+
+            headers: a list storing the name of variables telling how variable temperature_gradient,
+            velocity_magnitude_gradient, z_velocity_gradient are correlated the 2nd index of the data.
+
+            classification: a 1D tensor, storing classification results between 0-1 for each grid points for this batch.
+
+        Returns: 
+            loss: a SCALAR(single-value) tensor representing how bad a model predicts in a batch. A point with
+            high gradient and low classification value, or low gradient and high classification value will contribute
+            to higher loss. The loss wil also be high if the classificaition is close to 0.5, to encourage certain classification results.
+        '''
+        # Convert data to float32 if it's not already
+        data = tf.cast(data, tf.float32)
+        
+        # Extract the indices of the gradients from headers
+        temp_grad_idx = headers.index('temperature_gradient')
+        vel_mag_grad_idx = headers.index('velocity_magnitude_gradient')
+        z_vel_grad_idx = headers.index('z_velocity_gradient')
+        
+        # Extract the gradient values from the data tensor
+        temperature_gradient = data[:, temp_grad_idx]
+        velocity_magnitude_gradient = data[:, vel_mag_grad_idx]
+        z_velocity_gradient = data[:, z_vel_grad_idx]
+        
+        # Calculate the primary gradient loss. 
+        # If the dimension of these expressions are wrong(e.g. you miscalculated the geometric average of gradient), 
+        # or didn't write the expression according to the scale of the param(e.g., whether it is ranging form [0,1] or [-1,1]),
+        # The model will behave very strangely.
+        gradient_avg = (temperature_gradient * velocity_magnitude_gradient * z_velocity_gradient) ** (1/3)
+        loss_high_class_low_grad = classification * (1 - gradient_avg)
+        loss_low_class_high_grad = (1 - classification) * gradient_avg
+        primary_loss = tf.reduce_mean(loss_high_class_low_grad + loss_low_class_high_grad)
+        
+        # Add regularization loss to encourage certain properties in classification
+        regularization_loss = tf.reduce_mean(tf.square(classification - 0.5))
+        
+        # Total loss. 0.1 is added to avoid the loss approach to 0.693(ln2), which doesn't sounds good.
+        loss = primary_loss + 0.1 * regularization_loss
+        return loss
 
     # It defines the logic for a single training step. Called for each batch of data during model.fit().
     # It's not called during inference (model.predict) or evaluation (model.evaluate).
     def train_step(self, data):
         with tf.GradientTape() as tape:
             classification = self(data, training=True)
-            loss = loss_function(data, self.headers, classification)
+            loss = self.loss_function(data, self.headers, classification)
         
         trainable_vars = self.trainable_variables
         gradients = tape.gradient(loss, trainable_vars)

@@ -57,8 +57,10 @@ def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarr
     # Determine coordinate columns
     coord_cols = [col for col in data.columns if col in ['x', 'y', 'z']]
     
-    # Create the array with correct shape
-    array = np.full([1] + resolution + [len(headers)], np.nan)
+    # Create the array with correct shape. The default value is 0.
+    # Although grid points with NaN will also be filled with 0.
+    # They will be designed to return to NaN when filling into the original table.
+    array = np.full([1] + resolution + [len(headers)], 0.0)
     
     # Calculate increment of coordinates of each grid of numpy arrays
     if len(coord_cols) == 3:
@@ -85,80 +87,22 @@ def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarr
     indices_array = np.full(resolution, -1)
     
     # Assign values to grid points of array and store original indices
+    # If the value of that row is NaN, put the value 0 into the tensor.
+    # They will be designed to return to NaN when filling into the original table.
     for i, var in enumerate(headers):
         if len(coord_cols) == 2:
-            array[0, indices[:, 0], indices[:, 1], i] = normalized_data[var].values
+            values = normalized_data[var].values
+            nan_mask = np.isnan(values)
+            array[0, indices[:, 0], indices[:, 1], i] = np.where(nan_mask, 0, values)
             indices_array[indices[:, 0], indices[:, 1]] = data.index.values
         elif len(coord_cols) == 3:
-            array[0, indices[:, 0], indices[:, 1], indices[:, 2], i] = normalized_data[var].values
+            values = normalized_data[var].values
+            nan_mask = np.isnan(values)
+            array[0, indices[:, 0], indices[:, 1], indices[:, 2], i] = np.where(nan_mask, 0, values)
             indices_array[indices[:, 0], indices[:, 1], indices[:, 2]] = data.index.values
     
     print("Finished converting.")
     return array, headers, indices_array
-
-
-def loss_function(data: tf.Tensor, headers: list, classification_tensor: tf.Tensor) -> tf.Tensor:
-    '''
-    The function to calculate and tell the model how bad it performs prediction.
-
-    Args: 
-        data: A tensor. in shape [1, *resolution, len(headers)]
-
-        headers: a list storing the name of variables telling how variable temperature_gradient,
-        velocity_magnitude_gradient, z_velocity_gradient are correlated the 1st index of the data.
-
-        classification: a tensor, in shape [1, *resol, 1], the last index is storing classification results between 0-1, or NaN, for each grid points for this table.
-
-    Returns: 
-        loss: a SCALAR(single-value) tensor representing how bad a model predicts in this table. A point with
-        high gradient and low classification value, or low gradient and high classification value will contribute
-        to higher loss. The loss wil also be high if the classificaition is close to 0.5, to encourage certain classification results.
-    '''
-    # Convert data to float32 if it's not already
-    data = tf.cast(data, tf.float32)
-    classification_tensor = tf.cast(classification_tensor, tf.float32)
-    
-    # Extract the indices of the gradients from headers
-    temp_grad_idx = headers.index('temperature_gradient')
-    vel_mag_grad_idx = headers.index('velocity_magnitude_gradient')
-    z_vel_grad_idx = headers.index('z_velocity_gradient')
-    
-    # Extract the gradient values from the data tensor
-    if len(data.shape) == 4:  # 2D
-        temperature_gradient = data[0, :, :, temp_grad_idx]
-        velocity_magnitude_gradient = data[0, :, :, vel_mag_grad_idx]
-        z_velocity_gradient = data[0, :, :, z_vel_grad_idx]
-        classification = classification_tensor[0, :, :, 0]
-    elif len(data.shape) == 5:  # 3D
-        temperature_gradient = data[0, :, :, :, temp_grad_idx]
-        velocity_magnitude_gradient = data[0, :, :, :, vel_mag_grad_idx]
-        z_velocity_gradient = data[0, :, :, :, z_vel_grad_idx]
-        classification = classification_tensor[0, :, :, :, 0]
-
-    # Calculate the primary gradient loss. 
-    # If the dimension of these expressions are wrong(e.g. you miscalculated the geometric average of gradient), 
-    # or didn't write the expression according to the scale of the param(e.g., whether it is ranging form [0,1] or [-1,1]),
-    # The model will behave very strangely.
-    gradient_avg = (temperature_gradient * velocity_magnitude_gradient * z_velocity_gradient) ** (1/3)
-    loss_high_class_low_grad = classification * (1 - gradient_avg)
-    loss_low_class_high_grad = (1 - classification) * gradient_avg
-
-    def reduce_mean_ignore_nan(x, axis=None): # ignore nan points for the loss
-        mask = tf.math.is_finite(x)
-        x_masked = tf.where(mask, x, tf.zeros_like(x))
-        sum_masked = tf.reduce_sum(x_masked, axis=axis, keepdims=True)
-        count = tf.reduce_sum(tf.cast(mask, tf.float32), axis=axis, keepdims=True)
-        return tf.math.divide_no_nan(sum_masked, count)
-    
-    primary_loss = reduce_mean_ignore_nan(loss_high_class_low_grad + loss_low_class_high_grad)
-
-    # Add regularization loss to encourage certain properties in classification
-    regularization_loss = reduce_mean_ignore_nan(tf.square(classification - 0.5))
-    
-    # Total loss. 0.1 is added to avoid the loss approach to 0.693(ln2), which doesn't sounds good.
-    loss = primary_loss + 0.1 * regularization_loss
-
-    return loss
 
 
 class CustomModel2D(keras.Model):
@@ -176,10 +120,8 @@ class CustomModel2D(keras.Model):
         # Define the input layer
         self.inputs = keras.layers.Input(shape=(resolution[0], resolution[1], len(headers)))
         
-        # Convolutional layers.
-        # The layer have 1 filters(number of kernel) per variable, [3,3] size kernel.
-        # For points at the boundary, the 'same' padding will keep the output having the same dimension with the input.
-        self.conv_layers = [keras.layers.Conv2D(filters=1, kernel_size=(3, 3), activation='relu', padding='same') for _ in range(len(headers))]
+        # Convolutional layers
+        self.conv_layers = [keras.layers.Conv2D(filters=1, kernel_size=(3, 3), activation='linear', padding='same') for _ in range(len(headers))]
         
         # Dense layers
         self.dense1 = keras.layers.Dense(len(headers), activation='relu')
@@ -191,45 +133,106 @@ class CustomModel2D(keras.Model):
         conv_outputs = []
         for i in range(len(self.headers)):
             x = inputs[:, :, :, i:i+1]
-            conv_outputs.append(self.conv_layers[i](x))
-        
+            conv_output = self.conv_layers[i](x)
+            conv_outputs.append(conv_output)
+
         # Concatenate the outputs from all convolutions
         conv_output = tf.concat(conv_outputs, axis=-1)
-        print(conv_output.numpy())
+
         # Get shape information
         batch_size = tf.shape(conv_output)[0]
         height = tf.shape(conv_output)[1]
         width = tf.shape(conv_output)[2]
         channels = conv_output.get_shape().as_list()[-1]
-        
+
         # Reshape the output to apply dense layers efficiently
         reshaped = tf.reshape(conv_output, [-1, channels])
-        
+
         # Apply dense layers
         x = self.dense1(reshaped)
         x = self.dense2(x)
         x = self.output_layer(x)
-        
+
         # Reshape back to original spatial dimensions
         outputs = tf.reshape(x, [batch_size, height, width, 1])
-        
-        return outputs
 
+        return outputs
+    
+    def loss_function(self, data: tf.Tensor, headers: list, classification: tf.Tensor) -> tf.Tensor:
+        '''
+        The function to calculate and tell the model how bad it performs prediction.
+
+        Args: 
+            data: A tensor. in shape [1, *resolution, len(headers)]
+
+            headers: a list storing the name of variables telling how variable temperature_gradient,
+            velocity_magnitude_gradient, z_velocity_gradient are correlated the 1st index of the data.
+
+            classification: a tensor, in shape [1, *resol, 1], the last index is storing classification results between 0-1, or NaN, for each grid points for this table.
+
+        Returns: 
+            loss: a SCALAR(single-value) tensor representing how bad a model predicts in this table. A point with
+            high gradient and low classification value, or low gradient and high classification value will contribute
+            to higher loss. The loss wil also be high if the classificaition is close to 0.5, to encourage certain classification results.
+        '''
+        # Convert data to float32 if it's not already
+        data = tf.cast(data, tf.float32)
+        classification = tf.cast(classification, tf.float32)
+        
+        # Extract the indices of the gradients from headers
+        temp_grad_idx = headers.index('temperature_gradient')
+        vel_mag_grad_idx = headers.index('velocity_magnitude_gradient')
+        z_vel_grad_idx = headers.index('z_velocity_gradient')
+        
+        # Extract the gradient values from the data tensor
+        if len(data.shape) == 4:  # 2D
+            temperature_gradient = data[0, :, :, temp_grad_idx]
+            velocity_magnitude_gradient = data[0, :, :, vel_mag_grad_idx]
+            z_velocity_gradient = data[0, :, :, z_vel_grad_idx]
+            classification = classification[0, :, :, 0]
+        elif len(data.shape) == 5:  # 3D
+            temperature_gradient = data[0, :, :, :, temp_grad_idx]
+            velocity_magnitude_gradient = data[0, :, :, :, vel_mag_grad_idx]
+            z_velocity_gradient = data[0, :, :, :, z_vel_grad_idx]
+            classification = classification[0, :, :, :, 0]
+
+        # Calculate the primary gradient loss. 
+        # If the dimension of these expressions are wrong(e.g. you miscalculated the geometric average of gradient), 
+        # or didn't write the expression according to the scale of the param(e.g., whether it is ranging form [0,1] or [-1,1]),
+        # The model will behave very strangely.
+        gradient_avg = (temperature_gradient * velocity_magnitude_gradient * z_velocity_gradient) ** (1/3)
+        loss_high_class_low_grad = classification * (1 - gradient_avg)
+        loss_low_class_high_grad = (1 - classification) * gradient_avg
+
+        def reduce_mean_ignore_nan(x, axis=None): # ignore nan points for the loss
+            mask = tf.math.is_finite(x)
+            x_masked = tf.where(mask, x, tf.zeros_like(x))
+            sum_masked = tf.reduce_sum(x_masked, axis=axis, keepdims=True)
+            count = tf.reduce_sum(tf.cast(mask, tf.float32), axis=axis, keepdims=True)
+            return tf.math.divide_no_nan(sum_masked, count)
+        
+        primary_loss = reduce_mean_ignore_nan(loss_high_class_low_grad + loss_low_class_high_grad)
+
+        # Add regularization loss to encourage certain properties in classification
+        regularization_loss = reduce_mean_ignore_nan(tf.square(classification - 0.5))
+        
+        # Total loss. 0.1 is added to avoid the loss approach to 0.693(ln2), which doesn't sounds good.
+        loss = primary_loss + 0.1 * regularization_loss
+
+        return loss
 
     def train_step(self, data):
         with tf.GradientTape() as tape:
             # Forward pass
             classification = self(data, training=True)
-            
             # Compute loss
-            loss = loss_function(data, self.headers, classification)
-
+            loss = self.loss_function(data, self.headers, classification)
         # Compute gradients
         gradients = tape.gradient(loss, self.trainable_variables)
-        
+        # Clip gradients to prevent exploding gradients
+        clipped_gradients, _ = tf.clip_by_global_norm(gradients, clip_norm=1.0)
         # Update weights
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-
+        self.optimizer.apply_gradients(zip(clipped_gradients, self.trainable_variables))
         return {"loss": loss}
 
 
