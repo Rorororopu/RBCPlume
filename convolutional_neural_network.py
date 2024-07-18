@@ -57,10 +57,11 @@ def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarr
     # Determine coordinate columns
     coord_cols = [col for col in data.columns if col in ['x', 'y', 'z']]
     
-    # Create the array with correct shape. The default value is 0.
-    # Although grid points with NaN will also be filled with 0.
+    # Create the array with correct shape. The default value is 0.3.
+    # Although grid points with NaN will also be filled with 0.3,
     # They will be designed to return to NaN when filling into the original table.
-    array = np.full([1] + resolution + [len(headers)], 0.0)
+    # Then value 0.3 is ramdomly chosen, because if filled with 0, there will be a sharp edge at the edge.
+    array = np.full([1] + resolution + [len(headers)], 0.3)
     
     # Calculate increment of coordinates of each grid of numpy arrays
     if len(coord_cols) == 3:
@@ -87,18 +88,18 @@ def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarr
     indices_array = np.full(resolution, -1)
     
     # Assign values to grid points of array and store original indices
-    # If the value of that row is NaN, put the value 0 into the tensor.
+    # If the value of that row is NaN, put the value 0.3 into the tensor.
     # They will be designed to return to NaN when filling into the original table.
     for i, var in enumerate(headers):
         if len(coord_cols) == 2:
             values = normalized_data[var].values
             nan_mask = np.isnan(values)
-            array[0, indices[:, 0], indices[:, 1], i] = np.where(nan_mask, 0, values)
+            array[0, indices[:, 0], indices[:, 1], i] = np.where(nan_mask, 0.3, values)
             indices_array[indices[:, 0], indices[:, 1]] = data.index.values
         elif len(coord_cols) == 3:
             values = normalized_data[var].values
             nan_mask = np.isnan(values)
-            array[0, indices[:, 0], indices[:, 1], indices[:, 2], i] = np.where(nan_mask, 0, values)
+            array[0, indices[:, 0], indices[:, 1], indices[:, 2], i] = np.where(nan_mask, 0.3, values)
             indices_array[indices[:, 0], indices[:, 1], indices[:, 2]] = data.index.values
     
     print("Finished converting.")
