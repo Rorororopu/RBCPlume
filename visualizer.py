@@ -27,27 +27,38 @@ def get_directory_path(param_name:str) -> str:
             print("\033[91mInvalid directory path. No such directory exists. Please try again.\033[0m") #In red
 
 
-def plot_2D_data(data:pd.DataFrame, param_name:str, path:str, cmap:str='viridis'):
+def plot_2D_data(data: pd.DataFrame, param_name: str, path: str, cmap: str = 'viridis', range: list = None):
     '''
-    Generate a 2D scatter plot from a specified parameter in a pandas table. The function dynamically 
-    determines the plotting axes based on a slicing direction indicated by 'data_object.slicing'. The plot 
-    includes a color gradient to represent values, complete with a title, axis labels, and a color bar. 
+    Generate a 2D scatter plot from a specified parameter in a pandas table. The plot
+    includes a color gradient to represent values, complete with a title, axis labels, and a color bar.
     The resulting plot is saved to the specified file path.
 
     Args:
-        data_object: self.slicing determines what columns are coordinate column
-        data: The table containing coordinates and data.
-        param_name: name of the param to plot.
-        path: The path to store the image.
-        cmap: The colormap of the image. There are many choices available. Below are choices I use:
-            'viridis': Ranges from dark blue to bright yellow
-            'coolwarm': Diverging colormap, blue to red
+    data: The table containing coordinates and data.
+    param_name: name of the param to plot.
+    path: The path to store the image.
+    cmap: The colormap of the image. Choices include:
+        'viridis': Ranges from dark blue to bright yellow
+        'coolwarm': Diverging colormap, blue to red
+    range: Optional. The range of data shown in the plot.
+        If specified, values outside this range will be capped to the range limits.
+        If None, the full range of the data will be used.
     '''
-    
     # Plotting
     plt.figure(figsize=(10, 8))
-    sc = plt.scatter(data['x'], data['y'], c=data[param_name], cmap=cmap)
-    plt.colorbar(sc, label=param_name)
+    
+    # Prepare the color data
+    color_data = data[param_name]
+    
+    # Create the scatter plot
+    if range is not None:
+        sc = plt.scatter(data['x'], data['y'], c=color_data, cmap=cmap, vmin=range[0], vmax=range[1])
+    else:
+        sc = plt.scatter(data['x'], data['y'], c=color_data, cmap=cmap)
+    
+    # Add a colorbar
+    cbar = plt.colorbar(sc, label=param_name)
+    
     plt.title(f'Plot of {param_name}')
     plt.xlabel('x')
     plt.ylabel('y')

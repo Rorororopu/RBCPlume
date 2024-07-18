@@ -12,17 +12,18 @@ import keras.models
 import tensorflow as tf
 import keras
 import keras.optimizers
-df1 = pd.read_csv("ORIGINAL_TRAINING_DATA/CSV/data1.csv")
+'''df1 = pd.read_csv("ORIGINAL_TRAINING_DATA/CSV/data1.csv")
 data1, headers1, indices1 = cnn.data_arranger(df1, [200, 200])
 
 model = cnn.model_2D_create_compile(headers1, 0.005, [200, 200])
 
-model, hist = cnn.model_2D_train(model, data1, 30)
+model, hist = cnn.model_2D_train(model, data1, 30)'''
 
 df2 = pd.read_csv("ORIGINAL_TRAINING_DATA/CSV/data2.csv")
-data2, headers2, indices2 = cnn.data_arranger(df2, [200, 200])
+'''data2, headers2, indices2 = cnn.data_arranger(df2, [200, 200])
 df2 = cnn.model_2D_classification(model, data2, indices2, df2)
-vs.plot_2D_data(df2, 'is_boundary', 'classification.png', 'coolwarm')
+vs.plot_2D_data(df2, 'is_boundary', 'classification.png', 'coolwarm')'''
+vs.plot_2D_data(df2, 'temperature_gradient', 'T_grad.png', 'viridis', [0.0, 0.1])
 
 end_time = time.time()
 elapsed_time = end_time - start_time
