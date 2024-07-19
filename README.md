@@ -4,7 +4,7 @@ Identifying the boundry of heat plumes, using the data from direct numerical sim
 
 ## Required Softwares to Install
 
-1. [Nek5000](https://nek5000.mcs.anl.gov)
+1. [Nek5000](https://nekx5000.mcs.anl.gov)
 
     The software used to solve partial differential equations to get the simulation result of RBC.
 

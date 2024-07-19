@@ -92,8 +92,8 @@ class CustomModel(keras.Model):
         x = self.dense2(x)
         x = self.dense3(x)
         return self.output_layer(x)
-    
-    def loss_function(data:tf.Tensor, headers:list, classification:tf.Tensor) -> tf.Tensor:
+
+    def loss_function(self, data:tf.Tensor, headers:list, classification:tf.Tensor) -> tf.Tensor:
         '''
         The function to calculate and tell the model how bad it performs prediction.
 
@@ -176,7 +176,7 @@ def model_create_compile(headers:list, learning_rate:float) -> CustomModel:
     '''
     # Create, compile the model
     model = CustomModel(headers)
-    model.compile(optimizer = keras.optimizers.adam_v2(learning_rate=learning_rate))
+    model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate))# Don't delete the tf or Adam!
     return model
 
 
