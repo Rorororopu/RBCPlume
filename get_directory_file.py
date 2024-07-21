@@ -1,5 +1,8 @@
 ''' 
 Functions to get the path of directory and file, returning an ordered list of paths of files to read.
+
+This file exists is because if the user exports all datas in a simulation, 
+they could use this file to select a sequence of datas to read.
 '''
 
 

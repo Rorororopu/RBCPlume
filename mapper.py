@@ -1,23 +1,14 @@
 '''
-Map the original datas to a evenly spaced grid with user-specified resolution.
+Map the original data file to a evenly spaced grid with user-specified resolution.
 
-The data itself will be stored to a table, with the following titles:
+The data itself will be stored to a Pandas dataframe (in simple words, a table), with the following titles:
     x, y, z, temperature, velocity_magnitude, z-velocity
 Time column is deleted. If the data is sliced, its corresponding x, y, or z coordinate will not be included.
 Points out of the original data range will be converted to NaN.
 
-Each data file will be stored in a class called `Data(self, path)`, which have the following properties:
-    self.data: The pandas table of that file
-    self.time: The time value of that file
-    self.var_ranges: A dictionary in format {varname:[min, max], ...}. Time and x, y, z elements in this dict are deleted.
-    self.resolution: a list in format [resol1, resol2(, maybe resol3)]
-
-Data(self, path) also inherit from its father class Datas(paths). 
-
 There will also be a dictionary organizing these files, in format {<prefix>_0:Data(path_0), <prefix>_1:Data(path_1), ...}
 The prefix is named by user.
 '''
-
 
 import numpy as np
 import pandas as pd
@@ -25,6 +16,7 @@ import scipy.interpolate
 import preliminary_processing
 
 
+# This is only used for exporting data file
 def get_prefix_name() -> str:
     # Get prefix of data objects
     '''
@@ -105,6 +97,8 @@ def get_resolution_2D(datas_object:preliminary_processing.Datas) -> list:
 
 def get_resolution_3D(datas_object:preliminary_processing.Datas) -> list:
     '''
+    It could automatically calculate the resolution.
+
     Args:
         a datas_object. Only grid_num attribute is needed.
     
@@ -188,7 +182,8 @@ def get_resolution(datas_object:preliminary_processing.Datas) -> list:
 def mapper_2D(filepath:str, resolution:list) -> pd.DataFrame:
     '''
     Process a sliced data file by interpolating the variables onto a regularly spaced grid defined by the resolution.
-    Time column and one of the z values (because it is sliced and VisIt will always make z column be 0) will be dropped. NaN values will be converted to 0. 
+    Time and z coordinate columns will be dropped, because it is sliced and VisIt will always make z column be 0. 
+    NaN values will be converted to 0. 
     Points out of the original data range will be converted to NaN.
 
     (We have tried to store the data into a tensor, but it proves to not be the best choice, because it is really hard to drop points.)
@@ -196,13 +191,12 @@ def mapper_2D(filepath:str, resolution:list) -> pd.DataFrame:
     Args:
         filepath: Path of that data.
         resolution: Resolution in format [res1, res2].
-        batch_size: To save the memory usage, large data file will be splitted into batch before further processing. This number indicated how many rows are contained in a batch.
     
     Returns: 
-        interpolated_data: the table of that data.
+        interpolated_df: the Pandas dataframe of that data.
     '''
     # From slicing, know what vars to be plotted
-    var_ranges = preliminary_processing.get_var_ranges(filepath)
+    var_ranges, _ = preliminary_processing.get_info(filepath)
     
     # Prepare mesh grid
     grid_1, grid_2 = (np.linspace(var_ranges[var][0], var_ranges[var][1], res) for var, res in zip(['x', 'y'], resolution)) # Generate 2 arrays of coords
@@ -210,12 +204,12 @@ def mapper_2D(filepath:str, resolution:list) -> pd.DataFrame:
     coordinates = np.stack((mesh_grid_1.ravel(), mesh_grid_2.ravel()), axis=-1) # Flatten mesh_grid_1 and 2 and stack them.
 
     # Define columns to read
-    columns_to_read = [col for col in var_ranges.keys() if col not in ['time_derivative/conn_based/mesh_time', 'z']] # Excluding time, sliced x, y, or z
+    columns_to_read = [col for col in var_ranges.keys() if col not in ['time_derivative/conn_based/mesh_time', 'z']] # Excluding time, sliced coordinate
     indices = [i for i, var in enumerate(var_ranges.keys()) if var in columns_to_read]
     interpolated_results = []
     
     # I planned to make the data process be in batches, but it shows that then it can't deal with the boundry of batches,
-    # making the data blurred and behaving strangely. So I deleted the batch part.
+    # making the data blurred and behaving strangely. So I deleted the batch part. Still, I kept the name `batch`.
     batch = pd.read_csv(filepath, skiprows=1+2*len(var_ranges), delimiter=r'\s+|,', header=None, names=columns_to_read, usecols=indices, engine='python')     
     '''
     Skip header lines.
@@ -225,16 +219,16 @@ def mapper_2D(filepath:str, resolution:list) -> pd.DataFrame:
     Only read data in indicated indices.
     Avoid error message, since regular expression is used.
     '''
-    batch.fillna(0, inplace=True)# Replace NaNs with zero
+    batch.fillna(0, inplace=True) # Replace NaNs with zero
     points = batch[['x','y']].values
-    interpolated_batch = np.full((coordinates.shape[0], len(columns_to_read)), np.nan)
+    interpolated_batch = np.full((coordinates.shape[0], len(columns_to_read)), np.nan) # Create an empty array to store interpolated values.
 
     # Interpolation for each column
     for i, col in enumerate(columns_to_read):
         values = batch[col].values
         # For grid points out of the range, add NaN as their value (For instance, when slicing direction is z.)
-        # Filling value with NaNs may cause many problems, it would be better if it is filled with 0, 
-        # but it will have bugs for reason unknown.
+        # Filling value with NaNs may cause many problems to fix later, 
+        # but it will have bugs, if you fill in other values, for reason unknown.
         grid_data = scipy.interpolate.griddata(points, values, coordinates, method='linear', fill_value=np.nan)
         interpolated_batch[:, i] = grid_data
     # Store interpolated results in a list
@@ -242,12 +236,12 @@ def mapper_2D(filepath:str, resolution:list) -> pd.DataFrame:
 
     # Concatenate all interpolated results and convert them into a DataFrame
     final_data = np.concatenate(interpolated_results, axis=0)
-    interpolated_data = pd.DataFrame(final_data, columns=columns_to_read)
-    interpolated_data = interpolated_data.reset_index(drop=True)
+    interpolated_df = pd.DataFrame(final_data, columns=columns_to_read)
+    interpolated_df = interpolated_df.reset_index(drop=True)
     
     # Return the final interpolated DataFrame
     print("Finished mapping this data to your specified resolution.")
-    return interpolated_data
+    return interpolated_df
         
 
 def mapper_3D(filepath:str, resolution:list) -> pd.DataFrame:
@@ -261,13 +255,13 @@ def mapper_3D(filepath:str, resolution:list) -> pd.DataFrame:
     Args:
         filepath: Path of that data.
         resolution: Resolution in format [x_res, y_res, z_res].
-        batch_size: To save the memory usage, large data file will be splitted into batch before further processing. This number indicated how many rows are contained in a batch.
-    
+
     Returns: 
-        interpolated_data: the table of that data.
+        interpolated_df: the Pandas dataframe of that data.
     '''
+    '''The code is simular to mapper_2D, so the comment will not be as detailed s the previous function.'''
     # From slicing, know what vars to be plotted
-    var_ranges = preliminary_processing.get_var_ranges(filepath)
+    var_ranges, _ = preliminary_processing.get_info(filepath)
     
     # Prepare mesh grid
     grid_x, grid_y, grid_z = (np.linspace(var_ranges[var][0], var_ranges[var][1], res) for var, res in zip(['x', 'y', 'z'], resolution)) # Generate 3 arrays of coords
@@ -305,11 +299,11 @@ def mapper_3D(filepath:str, resolution:list) -> pd.DataFrame:
     
     # Concatenate all interpolated results and convert them into a DataFrame
     final_data = np.concatenate(interpolated_results, axis=0)
-    interpolated_data = pd.DataFrame(final_data, columns=columns_to_read)
-    interpolated_data = interpolated_data.reset_index(drop=True)
+    interpolated_df = pd.DataFrame(final_data, columns=columns_to_read)
+    interpolated_df = interpolated_df.reset_index(drop=True)
     # Return the final interpolated DataFrame
     print("Finished mapping this data to your specified resolution.")
-    return interpolated_data
+    return interpolated_df
 
 
 def mapper(datas_object:preliminary_processing.Datas, filepath:str, resolution:list) -> pd.DataFrame:
@@ -322,44 +316,14 @@ def mapper(datas_object:preliminary_processing.Datas, filepath:str, resolution:l
         datas_object: just to jnow the slicing.
         filepath: Path of that data.
         resolution: Resolution in format [res1, res2] ot [x_res, y_res, z_res].
-        batch_size: To save the memory usage, large data file will be splitted into batch before further processing. This number indicated how many rows are contained in a batch.
     
     Returns: 
-        interpolated_data: the interpolated table data.
+        interpolated_df: the interpolated Pandas dataframe.
     '''
     if not datas_object.slicing:
-        interpolated_data = mapper_3D(filepath, resolution)
+        interpolated_df = mapper_3D(filepath, resolution)
     else:
-        interpolated_data = mapper_2D(filepath, resolution)
-    return interpolated_data
+        interpolated_df = mapper_2D(filepath, resolution)
+    return interpolated_df
 
 
-class Data(preliminary_processing.Datas):
-    '''
-    The class to record the data of one time step.
-
-    Arg:
-        path: The corresponding file path for that time step.
-        paths: The complete list of file paths.
-
-    Properties:
-        self.data: Its corresponding data table.
-        self.time: A float value representing its time value.
-        self.var_ranges: A dictionary in format {varname:[min, max], ...}. Time, x, y, and z is not included.
-        self.resolution: a list in format [resol1, resol2(, maybe resol3)]
-    '''
-    def __init__(self, path:str, paths:list, resolution:list):
-        super().__init__(paths)
-
-        var_ranges = preliminary_processing.get_var_ranges(path)
-        var_ranges.pop('x') # Remove x, y, and z
-        var_ranges.pop('y')
-        var_ranges.pop('z')
-
-        self.time = get_time(var_ranges) # Record time
-        var_ranges.pop("time_derivative/conn_based/mesh_time") # drop time
-
-        self.var_ranges = var_ranges # list var ranges
-
-        self.resolution = resolution
-        self.data = mapper(self, path, resolution)
