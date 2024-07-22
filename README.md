@@ -2,6 +2,8 @@
 
 Identifying the boundry of heat plumes, using the data from direct numerical simulation of Rayleigh–Bénard convection(RBC) in CYLINDRICAL container.
 
+Sometimes the program will fail to work, usually just let it rerun once and it will be fine.
+
 ## Required Softwares to Install
 
 1. [Nek5000](https://nekx5000.mcs.anl.gov)

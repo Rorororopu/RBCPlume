@@ -20,7 +20,8 @@ import keras # Installed automatically with tensorflow
 import keras.layers
 import keras.optimizers
 
-def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, typing.List, int]:
+
+def data_arranger(df: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, typing.List, int]:
     '''
     Arg:
         Read in pandas table with header:
@@ -45,9 +46,10 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
         to properly deal with NaNs in the model, so I have to remove these points before data are inputed to the model.
     '''
     # List of columns to be retained and normalized
-    headers = [col for col in data.columns if col in ['temperature_gradient', 'velocity_magnitude_gradient', 'z_velocity_gradient']]
+    headers = [col for col in df.columns if col in ['temperature_gradient', 'velocity_magnitude_gradient', 'z_velocity_gradient']]
+    
     # Normalize data
-    normalized_data = data[headers].copy()
+    normalized_data = df[headers].copy()
     print("Normalizing gradient datas...")
     for col in headers:
         col_min = normalized_data[col].min(skipna=True)
@@ -69,16 +71,38 @@ def data_arranger(data: pd.DataFrame) -> typing.Tuple[tf.Tensor, typing.List, ty
     non_nan_values = original_array[non_nan_mask]
     print("Obtained regularized tensor.")
     
-    return non_nan_values, headers, non_nan_indices, len(data)
+    return non_nan_values, headers, non_nan_indices, len(df)
+
+
+class LossHistory(tf.keras.callbacks.Callback):
+    '''
+    Recording the loss for each batches for visualization.
+    '''
+    # Called at the beginning of training.
+    def on_train_begin(self, logs={}):
+        self.losses = []
+
+    # Called at the end of each batch.
+    def on_batch_end(self, batch, logs={}):
+        self.losses.append(logs.get('loss'))
 
 
 class CustomModel(keras.Model):
     '''
-    The model of neural network. Highly customed.
-    '''
+    The model of neural network. Customed.
 
-    # Called everytime a new instance is created.
+    Arg:
+        headers: a list of variables to input, to determine the structure of model. 
+        Currently it should be [temperature_gradient,velocity_magnitude_gradient,z_velocity_gradient].
+
+    Methods:
+        self.loss_function: Customed function to calculate and tell the model how bad it performs prediction.
+
+    '''
     def __init__(self:keras.Model, headers:list):
+        '''
+        Called everytime when a new instance is created.
+        '''
         super(CustomModel, self).__init__()
         self.headers = headers
         self.dense1 = keras.layers.Dense(len(headers), activation='relu')
@@ -86,17 +110,19 @@ class CustomModel(keras.Model):
         self.dense3 = keras.layers.Dense(len(headers), activation='relu')
         self.output_layer = keras.layers.Dense(1, activation='sigmoid')
 
-    # Called during the forward pass of the model, e.g. fitting, predicting, evaluating.
+
     def call(self:keras.Model, inputs:np.ndarray):
+        '''
+        Called during the forward pass of the model, e.g. fitting, predicting, evaluating.
+        '''
         x = self.dense1(inputs)
         x = self.dense2(x)
         x = self.dense3(x)
         return self.output_layer(x)
 
+
     def loss_function(self, data:tf.Tensor, headers:list, classification:tf.Tensor) -> tf.Tensor:
         '''
-        The function to calculate and tell the model how bad it performs prediction.
-
         Args: 
             data: a tensor recording the data of a batch. 1st index represents a data point, 2nd index represents
             the values of each column at that grid point
@@ -139,10 +165,13 @@ class CustomModel(keras.Model):
         # Total loss. 0.1 is added to avoid the loss approach to 0.693(ln2), which doesn't sounds good.
         loss = primary_loss + 0.1 * regularization_loss
         return loss
+    
 
-    # It defines the logic for a single training step. Called for each batch of data during model.fit().
-    # It's not called during inference (model.predict) or evaluation (model.evaluate).
     def train_step(self, data):
+        '''
+        It defines the logic for a single training step. Called for each batch of data during model.fit().
+        It's not called during inference (model.predict) or evaluation (model.evaluate).
+        '''
         with tf.GradientTape() as tape:
             classification = self(data, training=True)
             loss = self.loss_function(data, self.headers, classification)
@@ -152,20 +181,7 @@ class CustomModel(keras.Model):
         self.optimizer.apply_gradients(zip(gradients, trainable_vars))
         return {"loss": loss} # will be seen during training!
 
-
-class LossHistory(tf.keras.callbacks.Callback):
-    '''
-    Recording the loss for tach batches.
-    '''
-    # Called at the beginning of training.
-    def on_train_begin(self, logs={}):
-        self.losses = []
-
-    # Called at the end of each batch.
-    def on_batch_end(self, batch, logs={}):
-        self.losses.append(logs.get('loss'))
-
-
+    
 def model_create_compile(headers:list, learning_rate:float) -> CustomModel:
     '''
     Args: 
@@ -218,16 +234,16 @@ def view_loss_history(history:LossHistory, path:str):
     plt.savefig(path)
 
 
-def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: list, num_grid_data: int, table:pd.DataFrame) -> pd.DataFrame:
+def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: list, num_grid_data: int, df:pd.DataFrame) -> pd.DataFrame:
     '''
     Args:
         model: trained model.
         data: arranged data.
         non_nan_indices: List of indices of points with non_nan_value. To put the classification result to their original position.
         num_grid_data: Number of grid points for the whole data, to plug in NaN to grid points with NaN value.
-        table: The original table with temperature information.
+        df: The original Pandas dataframe with temperature information.
     Returns:
-        The original table with a column 'is_boundry' indicating how likely it is to be a boundry, and sign indicating its temperature.
+        The original Pandas dataframe with a column 'is_boundary' indicating how likely it is to be a boundry, and sign indicating its temperature.
     '''
     classification = np.array(model.predict(data)).flatten()
     result = np.full(num_grid_data, np.nan)  # create a full array with NaN values.
@@ -236,15 +252,15 @@ def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: l
     for i, index in enumerate(non_nan_indices):
         result[index] = classification[i]
     
-    table['is_boundary'] = result
+    df['is_boundary'] = result
     
     # Normalize to range of 0-1
-    table['is_boundary'] = (table['is_boundary'] - table['is_boundary'].min()) / (table['is_boundary'].max() - table['is_boundary'].min())
+    df['is_boundary'] = (df['is_boundary'] - df['is_boundary'].min()) / (df['is_boundary'].max() - df['is_boundary'].min())
     
     # Adjust sign based on temperature
-    table.loc[table['temperature'] < 0, 'is_boundary'] *= -1
+    #df.loc[df['temperature'] < 0, 'is_boundary'] *= -1
     
     print('Finished classifying data.')
-    return table
+    return df
 
 

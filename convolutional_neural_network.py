@@ -20,17 +20,21 @@ import keras # Installed automatically with tensorflow
 import keras.layers
 
 
-def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarray, typing.List, np.ndarray]:
+def data_arranger(df: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarray, typing.List, np.ndarray]:
     '''
     Arg:
-        Read in pandas table with header:
+        Read in Pandas dataframe with header:
         x,y,(maybe z),<other parameters>,temperature_gradient,velocity_magnitude_gradient,z_velocity_gradient
         Also a list of resolution, corresponding of its original coordinate.
     Returns:
         array:
             Drop the coordinate and other params except for gradients of pandas table,
             normalize the data in range 0-1, and rearrange the data to an 4D/5D numpy array.
-            The shape of the data is [1, *resolution, number_of_variables] (The first dimension indicates that there is only one batch in the file)
+            The shape of the data is [1, *resolution, number_of_variables] (The first dimension indicates that there is only one batch in the file).
+
+            For points with NaN value, they are filled in with the value 0.3(randomly chosen value between 0-1).
+            if it is filled with 0, the result of model will have a sharp edge.
+            Their classification value will finally be removed
         headers:
             A list of strings of names of headers for the array above, corresponding headers to arrays,
             since numpy array doesn't have a header.
@@ -41,10 +45,10 @@ def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarr
             If there is no such a row corredponding to that grid point, its indice will be -1.
     '''
     # List of columns to be retained and normalized
-    headers = [col for col in data.columns if col in ['temperature_gradient', 'velocity_magnitude_gradient', 'z_velocity_gradient']]
+    headers = [col for col in df.columns if col in ['temperature_gradient', 'velocity_magnitude_gradient', 'z_velocity_gradient']]
     
     # Normalize data
-    normalized_data = data[headers].copy()
+    normalized_data = df[headers].copy()
     print("Normalizing gradient data...")
     for col in headers:
         col_min = normalized_data[col].min(skipna=True)
@@ -55,7 +59,7 @@ def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarr
             normalized_data[col] = 0.0
     
     # Determine coordinate columns
-    coord_cols = [col for col in data.columns if col in ['x', 'y', 'z']]
+    coord_cols = [col for col in df.columns if col in ['x', 'y', 'z']]
     
     # Create the array with correct shape. The default value is 0.3.
     # Although grid points with NaN will also be filled with 0.3,
@@ -66,20 +70,20 @@ def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarr
     # Calculate increment of coordinates of each grid of numpy arrays
     if len(coord_cols) == 3:
         steps = np.array([
-            (data['x'].max() - data['x'].min()) / resolution[0],
-            (data['y'].max() - data['y'].min()) / resolution[1],
-            (data['z'].max() - data['z'].min()) / resolution[2]
+            (df['x'].max() - df['x'].min()) / resolution[0],
+            (df['y'].max() - df['y'].min()) / resolution[1],
+            (df['z'].max() - df['z'].min()) / resolution[2]
         ])
     else:  # sliced (2D)
         steps = np.array([
-            (data['x'].max() - data['x'].min()) / resolution[0],
-            (data['y'].max() - data['y'].min()) / resolution[1]
+            (df['x'].max() - df['x'].min()) / resolution[0],
+            (df['y'].max() - df['y'].min()) / resolution[1]
         ])
     
     # Calculate indices for each coordinate
     print('Converting the data to tensor...')
-    ranges = np.array([data[col].agg([min, max]) for col in coord_cols])
-    indices = np.floor((data[coord_cols].values - ranges[:, 0]) / steps).astype(int)
+    ranges = np.array([df[col].agg([min, max]) for col in coord_cols])
+    indices = np.floor((df[coord_cols].values - ranges[:, 0]) / steps).astype(int)
     
     # Clip indices to ensure they're within bounds
     indices = np.clip(indices, 0, np.array(resolution[:len(coord_cols)]) - 1)
@@ -95,23 +99,48 @@ def data_arranger(data: pd.DataFrame, resolution: list) -> typing.Tuple[np.ndarr
             values = normalized_data[var].values
             nan_mask = np.isnan(values)
             array[0, indices[:, 0], indices[:, 1], i] = np.where(nan_mask, 0.3, values)
-            indices_array[indices[:, 0], indices[:, 1]] = data.index.values
+            indices_array[indices[:, 0], indices[:, 1]] = df.index.values
         elif len(coord_cols) == 3:
             values = normalized_data[var].values
             nan_mask = np.isnan(values)
             array[0, indices[:, 0], indices[:, 1], indices[:, 2], i] = np.where(nan_mask, 0.3, values)
-            indices_array[indices[:, 0], indices[:, 1], indices[:, 2]] = data.index.values
+            indices_array[indices[:, 0], indices[:, 1], indices[:, 2]] = df.index.values
     
     print("Finished converting.")
     return array, headers, indices_array
 
 
+class LossHistory(tf.keras.callbacks.Callback):
+    '''
+    Recording the loss for tach batches.
+    '''
+    # Called at the beginning of training.
+    def on_train_begin(self, logs={}):
+        self.losses = []
+
+    # Called at the end of each batch.
+    def on_batch_end(self, batch, logs={}):
+        self.losses.append(logs.get('loss'))
+
+
 class CustomModel2D(keras.Model):
     '''
-    The model of convolutional neural network. Highly customized.
+    The model of convolutional neural network. Customed.
     The input is a tensor with shape [1, x, y, len(headers)], the output is a tensor with shape [1, x, y, 1].
     For each variable, there will be first a convolutional neural network(CNN),
     then a dense layer to take the value of convolutional layer of each variable of each grid point as input.
+
+    The code is simular to `neural_network.py`, so the comment won't be as detailed as it.
+
+    Arg:
+        headers: a list of variables to input, to determine the structure of model. 
+        Currently it should be [temperature_gradient,velocity_magnitude_gradient,z_velocity_gradient].
+        resolution: a list in format [resol1, resol2]
+
+    Methods:
+        self.loss_function: Customed function to calculate and tell the model how bad it performs prediction.
+
+    
     '''
     def __init__(self, headers: list, resolution: list):
         super(CustomModel2D, self).__init__()
@@ -128,6 +157,7 @@ class CustomModel2D(keras.Model):
         self.dense1 = keras.layers.Dense(3*len(headers), activation='relu')
         self.dense2 = keras.layers.Dense(3*len(headers), activation='relu')
         self.output_layer = keras.layers.Dense(1, activation='sigmoid')
+
 
     def call(self, inputs):
         # Apply separate convolutions for each header
@@ -158,7 +188,8 @@ class CustomModel2D(keras.Model):
         outputs = tf.reshape(x, [batch_size, height, width, 1])
 
         return outputs
-    
+
+
     def loss_function(self, data: tf.Tensor, headers: list, classification: tf.Tensor) -> tf.Tensor:
         '''
         The function to calculate and tell the model how bad it performs prediction.
@@ -222,6 +253,7 @@ class CustomModel2D(keras.Model):
 
         return loss
 
+
     def train_step(self, data):
         with tf.GradientTape() as tape:
             # Forward pass
@@ -243,7 +275,7 @@ def model_2D_create_compile(headers:list, learning_rate:float, resolution:list) 
         headers: list of headers of params. Determines the structure of model.
         learning_rate: The size of the steps taken during optimization to reach the minimum of the loss function. You need to try to get the optimal one.
     Returns:
-        model
+        created model.
     '''
     # Create, compile the model
     model = CustomModel2D(headers, resolution)
@@ -251,25 +283,14 @@ def model_2D_create_compile(headers:list, learning_rate:float, resolution:list) 
     return model
 
 
-class LossHistory(tf.keras.callbacks.Callback):
-    '''
-    Recording the loss for tach batches.
-    '''
-    # Called at the beginning of training.
-    def on_train_begin(self, logs={}):
-        self.losses = []
-
-    # Called at the end of each batch.
-    def on_batch_end(self, batch, logs={}):
-        self.losses.append(logs.get('loss'))
-
-
 def model_2D_train(model:CustomModel2D,data:tf.Tensor, epochs:int=2) -> typing.Tuple[CustomModel2D, LossHistory]:
     '''
     Args: 
         model: model to be trained
         data: arranged non-NaN datas.
-        epoches: number of passes for the whole data. Usually about 30 epoches is good. When it is too high, it will behave badly at the edge.
+        epoches: number of passes for the whole data. 
+        
+        You have to experiment an optimal epoch to get a clear image.
 
     Returns:
         model: Trained model.
@@ -301,33 +322,33 @@ def view_loss_history(history:LossHistory, path:str):
     plt.savefig(path)
 
 
-def model_2D_classification(model: CustomModel2D, data: tf.Tensor, indices: np.ndarray, table: pd.DataFrame) -> pd.DataFrame:
+def model_2D_classification(model: CustomModel2D, data: tf.Tensor, indices: np.ndarray, df: pd.DataFrame) -> pd.DataFrame:
     '''
     Args:
         model: trained model.
         data: arranged data.
         indices: tensors storing each grid point should be placed into which row of table.
-        table: The original table with temperature information.
+        df: The original Pandas dataframe with temperature information.
     Returns:
-        The original table with a column 'is_boundry' indicating how likely it is to be a boundry, and sign indicating its temperature.
+        The Pandas dataframe with a column 'is_boundry' indicating how likely it is to be a boundry, and sign indicating its temperature.
     '''
     classification = model.predict(data)[0]  # Because there is only 1 batch in a file
     
     # Add the 'is_boundary' column, initialized with NaN
-    table['is_boundary'] = 0
+    df['is_boundary'] = 0
     
     # Populate the 'is_boundary' column, skipping -1 indices, which means they don't exist at the original table
-    table.loc[indices.flatten()[indices.flatten() != -1], 'is_boundary'] = classification.flatten()[indices.flatten() != -1]
+    df.loc[indices.flatten()[indices.flatten() != -1], 'is_boundary'] = classification.flatten()[indices.flatten() != -1]
     
     # Normalize to range of 0-1
-    if table['is_boundary'].min() != table['is_boundary'].max():  # Avoid division by zero
-        table['is_boundary'] = (table['is_boundary'] - table['is_boundary'].min()) / (table['is_boundary'].max() - table['is_boundary'].min())
+    if df['is_boundary'].min() != df['is_boundary'].max():  # Avoid division by zero
+        df['is_boundary'] = (df['is_boundary'] - df['is_boundary'].min()) / (df['is_boundary'].max() - df['is_boundary'].min())
     
     # Adjust sign based on temperature
-    table.loc[table['temperature'] < 0, 'is_boundary'] *= -1
+    # df.loc[df['temperature'] < 0, 'is_boundary'] *= -1
     
     print('Finished classifying data.')
-    return table
+    return df
 
 
 '''

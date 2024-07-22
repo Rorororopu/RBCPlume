@@ -68,6 +68,23 @@ def plot_2D_df(df: pd.DataFrame, param_name: str, path: str, cmap: str = 'viridi
     print("Image saved.")
     plt.close()
 
+
+num_points = 200
+x_data = np.random.rand(num_points)
+y_data = np.random.rand(num_points)
+
+fig, ax = plt.subplots(figsize=(8, 6))
+scatter = ax.scatter([], [])
+ax.set_xlim(0, 1)
+ax.set_ylim(0, 1)
+
+def animate(frame):
+    scatter.set_offsets(np.column_stack((x_data[:frame+1], y_data[:frame+1])))
+    return scatter,
+
+ani = animation.FuncAnimation(fig, animate, frames=num_points, interval=50, blit=True)
+ani.save('scatterplot_movie.mp4', writer='ffmpeg', fps=30)
+
 # Not applied in model prediction, just for experiments
 def plot_relevance(df: pd.DataFrame, param1: str, param2: str, path: str):
     '''

@@ -140,17 +140,3 @@ def files_truncate(raw_file_paths: list, file_range: list) -> list:
     print("Get the truncated list of files to read.")
     return raw_file_paths[start:end+1] # Hell, not including the end+1th element!
 
-
-def get_directory_file():
-    ''' 
-    1. Ask about the directory you want to open
-    2. Ask about name of the file to open
-    3. Ask about file start and file end. Format: (start, end), or a single number, or all files available.
-    4. Cut the list of files in desired range.
-    '''
-    directory_path = get_directory_path()
-    file_paths_list = get_paths_list(directory_path)
-    file_range = get_file_range(file_paths_list)
-    file_paths_list = files_truncate(file_paths_list, file_range)
-
-    return file_paths_list
