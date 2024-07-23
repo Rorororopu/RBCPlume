@@ -1,13 +1,15 @@
 '''
 Input: 
-Pandas table with coordinates and gradients, and original data.
+    Pandas table with coordinates and gradients, and original data.
 
 Output: 
-A column attatched to the original table, indicating how likely this grid point is the boundry of heat plume.
-Its range is [-1, 1], or np.nan(for points with np.nan gradient).
-Its magnitude indicates its likelihood of being a heat plume.
-When it is positive, it indicates the boundry of a hot plume;
-when it is negative, it indicates the boundry of a cold plume.
+    A column attatched to the original table, indicating how likely this grid point is the boundry of heat plume.
+    Its range is [-1, 1], or np.nan(for points with np.nan gradient).
+    Its magnitude indicates its likelihood of being a heat plume.
+    When it is positive, it indicates the boundry of a hot plume;
+    when it is negative, it indicates the boundry of a cold plume.
+
+    You can also opt to let the output ranging from [0,1], to ignore the temperature of plumes.
 '''
 
 
@@ -234,7 +236,7 @@ def view_loss_history(history:LossHistory, path:str):
     plt.savefig(path)
 
 
-def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: list, num_grid_data: int, df:pd.DataFrame) -> pd.DataFrame:
+def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: list, num_grid_data: int, df:pd.DataFrame, if_temperature:bool = True) -> pd.DataFrame:
     '''
     Args:
         model: trained model.
@@ -242,6 +244,7 @@ def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: l
         non_nan_indices: List of indices of points with non_nan_value. To put the classification result to their original position.
         num_grid_data: Number of grid points for the whole data, to plug in NaN to grid points with NaN value.
         df: The original Pandas dataframe with temperature information.
+        if_temperature: If True, the range of `is_temperature` will be [-1, 1]. If False, it will be [0,1].
     Returns:
         The original Pandas dataframe with a column 'is_boundary' indicating how likely it is to be a boundry, and sign indicating its temperature.
     '''
@@ -257,8 +260,8 @@ def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: l
     # Normalize to range of 0-1
     df['is_boundary'] = (df['is_boundary'] - df['is_boundary'].min()) / (df['is_boundary'].max() - df['is_boundary'].min())
     
-    # Adjust sign based on temperature
-    #df.loc[df['temperature'] < 0, 'is_boundary'] *= -1
+    if if_temperature:
+        df.loc[df['temperature'] < 0, 'is_boundary'] *= -1
     
     print('Finished classifying data.')
     return df

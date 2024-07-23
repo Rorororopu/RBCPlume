@@ -2,7 +2,9 @@
 
 Identifying the boundry of heat plumes, using the data from direct numerical simulation of Rayleigh–Bénard convection(RBC) in CYLINDRICAL container.
 
-Sometimes the program will fail to work, usually just let it rerun once and it will be fine.
+Currently dense neural network is supported for both 2D (sliced) and 3D data, convolutional neural network is only supported for 2D data. Data visualization is also only supported for 2D data.
+
+Occationally the program will fail to work, usually just let it rerun once and it will be fine.
 
 ## Required Softwares to Install
 
@@ -18,24 +20,52 @@ Sometimes the program will fail to work, usually just let it rerun once and it w
 
     The programming language being used. PlumeCNN support python version higher or equal to 3.6.
 
+## The Output
+
+There are 3 types of outputs you can choose. 
+
+The first one is a csv file, with headers of coordinates, parameters (temperature, velocity magnitude, z-velocity), gradient of  these parameters, and the result of classification with header `is_boundary`. **This is currently the ONLY available output for 3D (unsliced) data.**
+
+ - The coordinates is not the same as the original one. It is been interpolated to an evenly-spaced, user-specified resolution. The min and max value of coordinates are the same. For sliced data, the coordinates will always be x and y, regardless of original slicing direction. 
+ - The temperature, z-velocity have been normalized to the range [-1,1], the velocity magnitude has been normalized to the range [0,1].
+ - The range of `is_boundary` is [0,1] or [-1,1] based on user's choice. Its magnitude indicates how likely it is to be a boundary of plume. If the range of the data is [-1,1], when it is positive, it indicates the boundry of a hot plume; when it is negative, it indicates the boundry of a cold plume.
+
+The second one is an image, making a scatterplot of the value of `is_boundary`. The colormap will vary based on whether the range of `is_boundary` is [0,1] or [-1,1].
+
+The last one is a movie. If you want to output a time series of result, this will zip the image of each time frames together, and will consider uneven time differences between each frames.
+
 ## Manual
 
-- Run your simulation in CYLINDRICAL CONTAINER on `Nek5000`. Make sure you normalized data of temperature so that it is supposd to be in the range from 0-1. 
+### 1. Get Data
 
-- Open the simulation result in `VisIt`
+- First, run your simulation in a **CYLINDRICAL CONTAINER** on `Nek5000`. Make sure you normalized data of temperature so that it is supposd to be in the range from 0-1. 
 
-- In `VisIt`, Click `File - Export Database`, in `Xmdv` format. You can choose to use either comma or space to separate in the databse. **Remember to export the coordinate, and don't change their filename after you export the data!**
+    Then, you need to prepare two sets of data from this simulation: the data to train the model and the data you want to classify. 
+
+    These two sets of data should have the same slicing direction, if they are sliced.
+
+    For the data for training, usually 2 or 3 sliced data is enough.
+
+    For the data to classify, you can output as much as you want.
+
+- Open the simulation result in `VisIt`. You can choose to slice the data perpendicular to x/y/z axis.
+
+- In `VisIt`, Click `File - Export Database`, in `Xmdv` format. You can choose to use either comma or space to separate in the databse. 
 
     Below are variables you **must** export, regardless of sequence:
 
-  - Coordinates of your grids (An option after you click the button "Export")
+  - coordinates of your grids (An option after you click the button "Export")
   - scalars/temperature
-  - scalars/time_derivative/conn_based/mesh_time (This is supposed to be used when outputing movie, but this function hasn't been developed yet, so it's okay to not export this varble now.)
+  - scalars/time_derivative/conn_based/mesh_time (If you want to output a movie)
   - scalars/velocity_magnitude
   - scalars/z_velocity
   
   Other variables will not be used. So it is not recommended to export other variables.
   Currently PlumeCNN only supports 3D database and database sliced perpendicular to x, y, or z axis.
+
+- If you want to output the movie, you have to opt the `Export all time states`, and feel free to change its format, as long as the sequence between files can easily be detected. The program can help you to select the range of files you want to read. **Don't change their filename after you export the data!** Otherwise, the file with modifies name cannot be in the right place within that list of all files to read.
+
+### 2. Install
 
 - Download this whole repository to the computer from [Github](https://github.com/Rorororopu/PlumeCNN).
 
@@ -69,28 +99,24 @@ Sometimes the program will fail to work, usually just let it rerun once and it w
 
     `pip install --upgrade pip`
 
-    `pip install matplotlib numpy pandas pathlib scipy sklearn tensorflow`
+    `pip install matplotlib numpy pandas pathlib scipy tensorflow`
 
 - `.gitignore` is the file to tell git that which file/directory they don't have to track their version. If you want to use `git` to track your version, please add `<name of your virtual environment>/` to a text file titled `.gitignore`, so that `git` won't sync this folder everytime you commit. Otherwise, this big file will make every commit process insanely slow!
 
     To know more about using `git` and [`Github`](https://github.com), feel free to ask [ChatGPT](https://chatgpt.com), [Claude](https://claude.ai) or other big language model! They are very capable of doing this.
 
+### 3. Run
+
 - **Everytime** you want to run the program on the **TERMINAL**, please input:
 
     `source <name of your virtual environment>/bin/activate` (You don't have to input this again if you have just input that previously)
 
-    `python main.py`, if you want to classify your data using pre-trained model.
-    `python main_train.py`, if you want to train your own model, or
-
-    and follow its instruction. When you finish running, please input:
-
-    `deactivate`
-
-    to close the virtual environment.
+    `python main.py`, and then follow its instruction. 
+    
+    When you finish running, please input:
+    `deactivate` to close the virtual environment.
 
   If you are using IDE like [VSC](https://code.visualstudio.com), they will automatically complete this if you use its `Remote - SSH` extension.
-
-## Your Result
 
 ## How it works
 
@@ -104,7 +130,7 @@ Below explains what are roles of each `*.py` file and how they interact. To see 
 
 2. `get_directory_file`
 
-    Getting a list of paths you want `PlumeCNN` to read.
+    Getting paths of data files you want `PlumeCNN` to read.
 
 3. `preliminary_processing`
 
@@ -134,4 +160,4 @@ Below explains what are roles of each `*.py` file and how they interact. To see 
 
 7. `visualizer.py`
 
-    Read the result of analyzation and output image to the directory user indicated.
+    Read the result of analyzation and output image/movie to the directory user indicated.

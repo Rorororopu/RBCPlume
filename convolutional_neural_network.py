@@ -8,6 +8,8 @@ Output:
     Its magnitude indicates its liklihood of being a heat plume.
     When it is positive, it indicates a hot plume;
     when it is negative, it indicates a cold plume.
+
+    You can also opt to let the output ranging from [0,1], to ignore the temperature of plumes.
 '''
 
 
@@ -322,13 +324,14 @@ def view_loss_history(history:LossHistory, path:str):
     plt.savefig(path)
 
 
-def model_2D_classification(model: CustomModel2D, data: tf.Tensor, indices: np.ndarray, df: pd.DataFrame) -> pd.DataFrame:
+def model_2D_classification(model: CustomModel2D, data: tf.Tensor, indices: np.ndarray, df: pd.DataFrame, if_temperature:bool = True) -> pd.DataFrame:
     '''
     Args:
         model: trained model.
         data: arranged data.
         indices: tensors storing each grid point should be placed into which row of table.
         df: The original Pandas dataframe with temperature information.
+        if_temperature: If True, the range of `is_temperature` will be [-1, 1]. If False, it will be [0,1].
     Returns:
         The Pandas dataframe with a column 'is_boundry' indicating how likely it is to be a boundry, and sign indicating its temperature.
     '''
@@ -344,8 +347,8 @@ def model_2D_classification(model: CustomModel2D, data: tf.Tensor, indices: np.n
     if df['is_boundary'].min() != df['is_boundary'].max():  # Avoid division by zero
         df['is_boundary'] = (df['is_boundary'] - df['is_boundary'].min()) / (df['is_boundary'].max() - df['is_boundary'].min())
     
-    # Adjust sign based on temperature
-    # df.loc[df['temperature'] < 0, 'is_boundary'] *= -1
+    if if_temperature:
+        df.loc[df['temperature'] < 0, 'is_boundary'] *= -1
     
     print('Finished classifying data.')
     return df

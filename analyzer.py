@@ -218,7 +218,7 @@ class Data(preliminary_processing.Datas):
 
         var_ranges, _ = preliminary_processing.get_info(path)
 
-        self.time = mapper.get_time(var_ranges) # Record time
+        self.time = mapper.get_time(var_ranges) # Record time. If the time is not outputed, the result will be None.
         var_ranges.pop("time_derivative/conn_based/mesh_time") # drop time
         var_ranges.pop('x') # Remove x, y, and z
         var_ranges.pop('y')
@@ -260,8 +260,8 @@ def calculate_vorticity(data_object:Data, data: pd.DataFrame) -> pd.DataFrame:
 
     # Prepare the grid for gradient calculation
     if data_object.slicing:
-        vx_grid = pandas_to_numpy(data_object, data, "velocity[0]") # Regardless of slicing direction, only the first two of velocity vectors will not be 0.
-        vy_grid = pandas_to_numpy(data_object, data, "velocity[1]")
+        vx_grid = Data.pandas_to_numpy(data_object, data, "velocity[0]") # Regardless of slicing direction, only the first two of velocity vectors will not be 0.
+        vy_grid = Data.pandas_to_numpy(data_object, data, "velocity[1]")
 
         dvx_dy, dvx_dx = np.gradient(vx_grid, edge_order=2)
         dvy_dy, dvy_dx = np.gradient(vy_grid, edge_order=2)
@@ -281,9 +281,9 @@ def calculate_vorticity(data_object:Data, data: pd.DataFrame) -> pd.DataFrame:
             'vorticity': vorticity.ravel()
             })
     else: # 3D
-        vx_grid = pandas_to_numpy(data_object, data, "velocity[0]")
-        vy_grid = pandas_to_numpy(data_object, data, "velocity[1]")
-        vz_grid = pandas_to_numpy(data_object, data, "velocity[2]")
+        vx_grid = Data.pandas_to_numpy(data_object, data, "velocity[0]")
+        vy_grid = Data.pandas_to_numpy(data_object, data, "velocity[1]")
+        vz_grid = Data.pandas_to_numpy(data_object, data, "velocity[2]")
 
         dvx_dz, dvx_dy, dvx_dx = np.gradient(vx_grid, edge_order=2)
         dvy_dz, dvy_dy, dvy_dx = np.gradient(vy_grid, edge_order=2)

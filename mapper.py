@@ -33,35 +33,26 @@ def get_prefix_name() -> str:
 
 def get_time(var_ranges: dict) -> float:
     '''
-    Extracts the time value from the var_ranges_raw dictionary at the key.
+    Extracts the time value from the var_ranges dictionary at the key.
     The min and max values should be the same.
-    
-    Args: 
-        var_ranges: dictionary in format {varname:[min, max], ...}.
-
+    Args:
+    var_ranges: dictionary in format {varname:[min, max], ...}.
     Returns:
-        time: The time value extracted from the dictionary.
-
-    Error: 
-        If the key 'time_derivative/conn_based/mesh_time' is not found, prints an error message
-        and exits the program.
+    time: The time value extracted from the dictionary.
+    If the key 'time_derivative/conn_based/mesh_time' doesn't exist, return None.
     '''
-
     key = 'time_derivative/conn_based/mesh_time'
-    
     if key not in var_ranges:
-        print("\033[91mError: The key 'time_derivative/conn_based/mesh_time' is not found in the dictionary.\033[0m")
-        exit(1)
+        return None
     
     time_range = var_ranges[key]
     
     if time_range[0] != time_range[1]:
         print("\033[91mError: The min and max values for time in one file are not the same.\033[0m")
-        exit(1)
+        return None
     
     time = time_range[0]
     print("Obtain the time for this data.")
-    
     return time
 
 
