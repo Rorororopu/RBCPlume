@@ -16,21 +16,6 @@ import scipy.interpolate
 import preliminary_processing
 
 
-# This is only used for exporting data file
-def get_prefix_name() -> str:
-    # Get prefix of data objects
-    '''
-    For instance, if your answer is 'db', files will be named 'db_0', 'db_1', ... 
-    '''
-    while True:
-        prefix_name = input("\nWhat is the prefix name for the Data objects?\n"
-                            "For instance, if your answer is 'db', files will be named 'db_0', 'db_1', ... ")
-        if not prefix_name or not prefix_name[0].isalpha():
-            print("The prefix name must start with an alphabet character and not be empty.")
-        else: 
-            return prefix_name
-
-
 def get_time(var_ranges: dict) -> float:
     '''
     Extracts the time value from the var_ranges dictionary at the key.

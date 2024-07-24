@@ -1,10 +1,6 @@
 ''' 
-Functions to get the path of directory and file, returning an ordered list of paths of files to read.
-
-This file exists is because if the user exports all datas in a simulation, 
-they could use this file to select a sequence of datas to read.
+Functions to get the path of directory and file to read.
 '''
-
 
 from pathlib import Path # Check if the path exist
 
@@ -14,7 +10,7 @@ def get_directory_path() -> str:
     Prompt the user to enter the path of the directory to open repeatedly until a valid path is provided.
 
     Returns:
-        str: The inputted path to the directory which has been verified to exist.
+        directory_path: The inputted path to the directory which has been verified to exist.
     '''
     while True:
         directory_path = input("\nWhat is the path of the directory containing VisIt database you want to open? ")
@@ -26,6 +22,58 @@ def get_directory_path() -> str:
         else:
             print("\033[91mInvalid directory path. No such directory exists. Please try again.\033[0m")
 
+
+def get_file_names(directory_path: str) -> list:
+    '''
+    Get a list of files of data to train the model.
+    
+    Args:
+        directory_path: The path of the directory to search.
+    
+    Returns:
+        An ordered list of paths of files indicated by the user, like [db_0000.okc, db_0001.okc, db_0002.okc, ...]
+    '''
+    file_list = []
+    directory = Path(directory_path)
+    while True:
+        try:
+            file_path = input("Enter the file path: ").strip()
+            full_path = directory / Path(file_path)
+            if not full_path.is_file():
+                print(f"\033[91mFile not found: {full_path}. Please try again.\033[0m")
+                continue
+            file_list.append(file_path)
+            print(f"File added: {file_path}")
+            add_another = input("Do you want to add another file? (y/n): ").strip().lower()
+            if add_another in ['y', 'Y']:
+                continue
+            elif add_another in ['n', 'N']:
+                print(f"Finished. The list of your files as training dataset is {file_list}")
+                break
+            else:
+                print("Invalid input. Please enter 'y' or 'n'.")
+        except Exception as e:
+            print(f"\033[91mAn error occurred: {e}. Please try again.\033[0m")
+    return file_list
+
+
+# ---- These three functions are for getting a list of files to generate a movie ---- #
+# ---- Returning an ordered list of paths of a sequence of datas to read ---- #
+
+def if_series() -> bool:
+    '''
+    Ask if the user wants to classify a series of files or just a few files.
+    '''
+    while True:
+        response = input("Do you want to classify a series of files in your simulation or just a few specific files?\n"
+                         "Enter 'y' for a series of files, or 'n' for a few specific files: ").strip()
+        if response in ['y', 'Y']:
+            return True
+        elif response in ['n', 'N']:
+            return False
+        else:
+            print("Invalid input. Please enter 'y' or 'n'.")
+        
 
 def get_paths_list(directory_path: str) -> list:
     '''
@@ -48,7 +96,9 @@ def get_paths_list(directory_path: str) -> list:
         
             if files_raw: #If the list is not empty
                 suffixes = {file.suffix for file in files_raw if file.is_file()} # Collect all suffixes in this list, check if there multiple suffixs under same file name
-                if len(suffixes) > 1:
+                if len(suffixes) <= 1:
+                    files = files_raw
+                else:
                     print(f"\033[93mMultiple file suffixes found: {', '.join(suffixes)}\033[0m") #Example: .txt, .csv, ..., in yellow
                     while True:
                         chosen_suffix = input("Please enter the suffix of files you want to open (e.g., .txt, .csv).\n",
@@ -58,8 +108,6 @@ def get_paths_list(directory_path: str) -> list:
                             print("\033[91mInvalid suffix. Please try again.\033[0m") # In red
                         else:  # If files is not empty
                             break
-                else:
-                    files = files_raw
 
                 files = sorted(files)  # Ensure the final list is sorted
                 print(f"Success. {len(files)} file(s) found!")

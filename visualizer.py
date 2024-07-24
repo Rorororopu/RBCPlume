@@ -85,10 +85,13 @@ def plot_2D_df(df: pd.DataFrame, param_name:str, path:str=None, cmap:str='viridi
     else:
         return fig, ax
 
-
-def create_movie_from_data(data_frames: typing.List[analyzer.Data], param_name: str, path: str, fps: int = 30):
+# Not applied in code because FFMPG is not installed on the HPC.
+def create_2D_movie(data_frames: typing.List[analyzer.Data], param_name: str, path: str, fps: int = 30):
     '''
     Create a movie directly from a series of data with uneven time intervals.
+
+    Because this function needs FFMpeg, and I can't install it on HPC, so it is currently not in use.
+
     Args:
         data_frames: List of dataframes, one for each frame.
         param_name: name of the param to plot.

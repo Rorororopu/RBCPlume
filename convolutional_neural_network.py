@@ -324,7 +324,7 @@ def view_loss_history(history:LossHistory, path:str):
     plt.savefig(path)
 
 
-def model_2D_classification(model: CustomModel2D, data: tf.Tensor, indices: np.ndarray, df: pd.DataFrame, if_temperature:bool = True) -> pd.DataFrame:
+def model_2D_classification(model: CustomModel2D, data: tf.Tensor, indices: np.ndarray, df: pd.DataFrame, if_temperature:bool = False) -> pd.DataFrame:
     '''
     Args:
         model: trained model.

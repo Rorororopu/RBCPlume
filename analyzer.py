@@ -35,7 +35,10 @@ class Data(preliminary_processing.Datas):
         self.df: Its corresponding Pandas dataframe.
         self.time: A float value representing its time value.
         self.var_ranges: A dictionary in format {varname:[min, max], ...}. Time, x, y, and z is not included.
-        self.resolution: a list in format [resol1, resol2(, maybe resol3)]
+        self.resolution: a list in format [resol1, resol2(, maybe resol3)]. If it is none, it means the user have to manually input the resolution in the terminal.
+        
+
+
 
     Methods:
         self.pandas_to_numpy: Convert pandas table to 2D/3D numpy array for gradient calculation
@@ -213,7 +216,7 @@ class Data(preliminary_processing.Datas):
         self.calculate_gradients('z_velocity')
 
 
-    def __init__(self, path:str, paths:list, resolution:list):
+    def __init__(self, path:str, paths:list, resolution:list = None):
         super().__init__(paths)
 
         var_ranges, _ = preliminary_processing.get_info(path)
@@ -226,7 +229,10 @@ class Data(preliminary_processing.Datas):
 
         self.var_ranges = var_ranges # list var ranges
 
-        self.resolution = resolution
+        self.resolution = resolution 
+        if self.resolution is None: # if none, the user have to input the resolution themselves
+            self.resolution = mapper.get_resolution(self)
+        
         self.df = mapper.mapper(self, path, resolution)
 
         self.df_process() # process the dataframe

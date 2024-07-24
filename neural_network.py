@@ -236,7 +236,7 @@ def view_loss_history(history:LossHistory, path:str):
     plt.savefig(path)
 
 
-def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: list, num_grid_data: int, df:pd.DataFrame, if_temperature:bool = True) -> pd.DataFrame:
+def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: list, num_grid_data: int, df:pd.DataFrame, if_temperature:bool = False) -> pd.DataFrame:
     '''
     Args:
         model: trained model.

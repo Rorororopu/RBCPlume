@@ -4,6 +4,8 @@ Identifying the boundry of heat plumes, using the data from direct numerical sim
 
 Currently dense neural network is supported for both 2D (sliced) and 3D data, convolutional neural network is only supported for 2D data. Data visualization is also only supported for 2D data.
 
+Now the user have to train the model everytime they use the model, because the structure of a convolutional neural network will depend on the shape of input, it is hard to keep the consistency of data shape throughout each use of this program. Feel free to add the function to save the model after training. Besides, training the model each time only takes about 25 seconds. 
+
 Occationally the program will fail to work, usually just let it rerun once and it will be fine.
 
 ## Required Softwares to Install
@@ -24,15 +26,15 @@ Occationally the program will fail to work, usually just let it rerun once and i
 
 There are 3 types of outputs you can choose. 
 
-The first one is a csv file, with headers of coordinates, parameters (temperature, velocity magnitude, z-velocity), gradient of  these parameters, and the result of classification with header `is_boundary`. **This is currently the ONLY available output for 3D (unsliced) data.**
+The first one is a `CSV` file, with headers of coordinates, parameters (temperature, velocity magnitude, z-velocity), gradient of  these parameters, and the result of classification with header `is_boundary`. **This is currently the ONLY available output for 3D (unsliced) data.**
 
  - The coordinates is not the same as the original one. It is been interpolated to an evenly-spaced, user-specified resolution. The min and max value of coordinates are the same. For sliced data, the coordinates will always be x and y, regardless of original slicing direction. 
  - The temperature, z-velocity have been normalized to the range [-1,1], the velocity magnitude has been normalized to the range [0,1].
  - The range of `is_boundary` is [0,1] or [-1,1] based on user's choice. Its magnitude indicates how likely it is to be a boundary of plume. If the range of the data is [-1,1], when it is positive, it indicates the boundry of a hot plume; when it is negative, it indicates the boundry of a cold plume.
 
-The second one is an image, making a scatterplot of the value of `is_boundary`. The colormap will vary based on whether the range of `is_boundary` is [0,1] or [-1,1].
+The second one is a `PNG` image, making a scatterplot of the value of `is_boundary`. The colormap will vary based on whether the range of `is_boundary` is [0,1] or [-1,1].
 
-The last one is a movie. If you want to output a time series of result, this will zip the image of each time frames together, and will consider uneven time differences between each frames.
+The last one is a movie (Sadly, currently not in use). If you want to output a time series of result, this will zip the image of each time frames together, and will consider uneven time differences between each frames.
 
 ## Manual
 
@@ -40,7 +42,7 @@ The last one is a movie. If you want to output a time series of result, this wil
 
 - First, run your simulation in a **CYLINDRICAL CONTAINER** on `Nek5000`. Make sure you normalized data of temperature so that it is supposd to be in the range from 0-1. 
 
-    Then, you need to prepare two sets of data from this simulation: the data to train the model and the data you want to classify. 
+    Then, you need to prepare two sets of data **FROM THIS SIMULATION**: the data to train the model and the data you want to classify. 
 
     These two sets of data should have the same slicing direction, if they are sliced.
 
@@ -48,7 +50,7 @@ The last one is a movie. If you want to output a time series of result, this wil
 
     For the data to classify, you can output as much as you want.
 
-- Open the simulation result in `VisIt`. You can choose to slice the data perpendicular to x/y/z axis.
+- Open the simulation result in `VisIt`. You can choose to slice the data perpendicular to x/y/z axis. Currently PlumeCNN only supports 3D database and database sliced perpendicular to x, y, or z axis.
 
 - In `VisIt`, Click `File - Export Database`, in `Xmdv` format. You can choose to use either comma or space to separate in the databse. 
 
@@ -60,8 +62,7 @@ The last one is a movie. If you want to output a time series of result, this wil
   - scalars/velocity_magnitude
   - scalars/z_velocity
   
-  Other variables will not be used. So it is not recommended to export other variables.
-  Currently PlumeCNN only supports 3D database and database sliced perpendicular to x, y, or z axis.
+  Other variables will not be used. So it is not recommended to export them.
 
 - If you want to output the movie, you have to opt the `Export all time states`, and feel free to change its format, as long as the sequence between files can easily be detected. The program can help you to select the range of files you want to read. **Don't change their filename after you export the data!** Otherwise, the file with modifies name cannot be in the right place within that list of all files to read.
 
@@ -117,6 +118,10 @@ The last one is a movie. If you want to output a time series of result, this wil
     `deactivate` to close the virtual environment.
 
   If you are using IDE like [VSC](https://code.visualstudio.com), they will automatically complete this if you use its `Remote - SSH` extension.
+
+- If you don't want to input the path of files to read everytime you run the program, you could also open the `main.py` and edit the code by yourself.
+
+- The code being commented at `main.py` is proven to be working, for both NN model and CNN model. The UI version hasn't been tested yet, but you can know the logic of the code by viewing them.
 
 ## How it works
 
