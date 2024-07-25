@@ -1,4 +1,4 @@
-# PlumeCNN
+# RBCPlume
 
 Identifying the boundry of heat plumes, using the data from direct numerical simulation of Rayleigh–Bénard convection(RBC) in CYLINDRICAL container.
 
