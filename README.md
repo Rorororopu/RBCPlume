@@ -1,4 +1,4 @@
-# RBCPlume
+# PlumeCNN
 
 Identifying the boundry of heat plumes, using the data from direct numerical simulation of Rayleigh–Bénard convection(RBC) in CYLINDRICAL container.
 
@@ -123,6 +123,8 @@ The last one is a movie (Sadly, currently not in use). If you want to output a t
 
 - The code being commented at `main.py` is proven to be working, for both NN model and CNN model. The UI version hasn't been tested yet, but you can know the logic of the code by viewing them.
 
+- If you like to run the code step by step, you could also use [Jupyter Notebook](https://jupyter.org) to run the program. If you are using VSC, just install the extension for it and you can simple use it! The filename extension for Jupyter Notebook is `.ipynb`.
+
 ## How it works
 
 Below explains what are roles of each `*.py` file and how they interact. To see more detail, feel free to look through the codes file and play around with them. There are comments in the code and I'll make my best to make them easy to understand.
@@ -132,6 +134,8 @@ Below explains what are roles of each `*.py` file and how they interact. To see 
     Only this file will interact with you. 
 
     The rest of the files are only storing functions to call at this file.
+
+    - `main.ipynb` is an example of directly using the code to classify. This is proven to be working.
 
 2. `get_directory_file`
 

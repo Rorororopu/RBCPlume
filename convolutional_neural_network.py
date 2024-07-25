@@ -347,6 +347,7 @@ def model_2D_classification(model: CustomModel2D, data: tf.Tensor, indices: np.n
     if df['is_boundary'].min() != df['is_boundary'].max():  # Avoid division by zero
         df['is_boundary'] = (df['is_boundary'] - df['is_boundary'].min()) / (df['is_boundary'].max() - df['is_boundary'].min())
     
+
     if if_temperature:
         df.loc[df['temperature'] < 0, 'is_boundary'] *= -1
     

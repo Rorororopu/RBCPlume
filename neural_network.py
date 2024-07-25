@@ -256,9 +256,10 @@ def model_classification(model: CustomModel, data: tf.Tensor, non_nan_indices: l
         result[index] = classification[i]
     
     df['is_boundary'] = result
-    
+
     # Normalize to range of 0-1
     df['is_boundary'] = (df['is_boundary'] - df['is_boundary'].min()) / (df['is_boundary'].max() - df['is_boundary'].min())
+    
     
     if if_temperature:
         df.loc[df['temperature'] < 0, 'is_boundary'] *= -1

@@ -103,11 +103,7 @@ if if_series:
 else:
     list_paths_classify = get_directory_file.get_file_names(directory_classify)
 
-Data_classify = [analyzer.Data]  # Create an empty list to store Data objects
-
-for path in list_paths_classify:
-    data = analyzer.Data(path, list_paths_classify)
-    Data_classify.append(data)
+Data_classify = [analyzer.Data(path, list_paths_classify, Data_training[0].resolution) for path in list_paths_classify] 
 '''
 UNCOMMENT THIS CODE TO MANUALLY PREPARE THE DATA TO TRAIN THE MODEL.
 
